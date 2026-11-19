@@ -2056,23 +2056,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       </div>
                     </div>
 
-                    {/* Chip EMV & Contactless Waves */}
-                    <div className="relative z-10 flex items-center justify-between my-1 px-1">
-                      {/* EMV Microchip Gold Graphic */}
-                      <div className="w-9 h-6.5 rounded bg-gradient-to-br from-yellow-200 via-amber-300 to-yellow-600 p-0.5 shadow-inner border border-amber-600/50 flex flex-col justify-between">
-                        <div className="w-full h-0.5 border-b border-amber-700/50" />
-                        <div className="w-full flex justify-between">
-                          <div className="w-2 h-2.5 border-r border-amber-700/50" />
-                          <div className="w-2 h-2.5 border-l border-amber-700/50" />
-                        </div>
-                        <div className="w-full h-0.5 border-t border-amber-700/50" />
-                      </div>
-
-                      <div className="text-white/70 flex items-center gap-1">
-                        <Wifi className="w-3.5 h-3.5 rotate-90" />
-                      </div>
-                    </div>
-
                     {/* Center: Foto Avatar & Identitas Lengkap Anggota */}
                     <div className="relative z-10 text-center my-auto py-1">
                       {/* Avatar Profile Ring */}
