@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   LogOut,
-  QrCode,
   ScanLine,
   FileText,
   Award,
@@ -42,6 +41,7 @@ import {
   Eye,
   EyeOff,
   Bell,
+  RotateCw,
 } from 'lucide-react';
 import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -50,6 +50,7 @@ import { uploadProofToGDrive } from '../lib/gdrive';
 import { normalizeStudentId } from '../lib/memberSync';
 import { formatDateTimeWIB } from '../lib/dateUtils';
 import { changeUserPin } from '../lib/authSecurity';
+import { Footer } from '../components/Footer';
 import {
   isPushNotificationEnabled,
   requestNotificationPermission,
@@ -370,6 +371,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const proofFileInputRef = useRef<HTMLInputElement | null>(null);
   const delegasiFileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDownloadingCard, setIsDownloadingCard] = useState(false);
+  const [cardSide, setCardSide] = useState<'front' | 'back'>('front');
 
   // Modals state
   const [showQrModal, setShowQrModal] = useState(false);
@@ -1275,20 +1277,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     return Math.round(R * c);
   };
 
-  // Render & Unduh Kartu Digital Anggota ke Gambar PNG Berkualitas Tinggi (Anti-Gagal 300 DPI)
+  // Render & Unduh Kartu Digital Anggota Vertikal (Format Name Tag / KTM Universitas Terbuka Style 300 DPI)
   const handleDownloadCardPng = async () => {
     setIsDownloadingCard(true);
     try {
-      const width = 1012;
-      const height = 638;
+      const width = 650;
+      const height = 1000;
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Perangkat tidak mendukung Canvas 2D.');
 
-      // 1. Rounded rectangle clip untuk bentuk kartu Smart ID
-      const r = 38;
+      // 1. Rounded rectangle clip untuk bentuk kartu tegak vertikal (KTM ID-1)
+      const r = 36;
       ctx.beginPath();
       ctx.moveTo(r, 0);
       ctx.lineTo(width - r, 0);
@@ -1302,39 +1304,30 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       ctx.closePath();
       ctx.clip();
 
-      // 2. Background Gradient (Deep Metallic Royal Blue)
-      const bgGrad = ctx.createLinearGradient(0, 0, width, height);
-      bgGrad.addColorStop(0, '#0a192f');
-      bgGrad.addColorStop(0.3, '#1e3a8a');
-      bgGrad.addColorStop(0.7, '#1d4ed8');
-      bgGrad.addColorStop(1, '#0f172a');
-      ctx.fillStyle = bgGrad;
+      // 2. Background Putih Bersih Institusional
+      ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, width, height);
 
-      // Ambient radial lighting
-      const glow1 = ctx.createRadialGradient(width - 150, 100, 20, width - 150, 100, 300);
-      glow1.addColorStop(0, 'rgba(59, 130, 246, 0.35)');
-      glow1.addColorStop(1, 'rgba(59, 130, 246, 0)');
-      ctx.fillStyle = glow1;
-      ctx.fillRect(0, 0, width, height);
+      // Dot-Matrix Security Pattern di sisi kiri atas (Ala KTM UT)
+      ctx.fillStyle = '#CBD5E1';
+      for (let x = 40; x < 220; x += 14) {
+        for (let y = 140; y < 450; y += 14) {
+          ctx.beginPath();
+          ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
 
-      const glow2 = ctx.createRadialGradient(120, height - 120, 20, 120, height - 120, 280);
-      glow2.addColorStop(0, 'rgba(99, 102, 241, 0.3)');
-      glow2.addColorStop(1, 'rgba(99, 102, 241, 0)');
-      ctx.fillStyle = glow2;
-      ctx.fillRect(0, 0, width, height);
-
-      // Decorative concentric rings
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
-      ctx.lineWidth = 2;
+      // 3. Lubang Tali Lanyard / Slot Gantungan Name Tag
+      ctx.fillStyle = '#E2E8F0';
       ctx.beginPath();
-      ctx.arc(width - 120, height / 2, 220, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(width - 120, height / 2, 340, 0, Math.PI * 2);
+      ctx.roundRect(width / 2 - 40, 22, 80, 14, 7);
+      ctx.fill();
+      ctx.strokeStyle = '#CBD5E1';
+      ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      // 3. Logo GenBI Asli (/logo-genbi.png)
+      // 4. Logo GenBI Asli (/logo-genbi.png)
       const logoImg = new Image();
       logoImg.crossOrigin = 'anonymous';
       await new Promise((resolve) => {
@@ -1344,231 +1337,180 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         setTimeout(resolve, 300);
       });
 
-      const logoBoxSize = 64;
+      const logoSize = 52;
       ctx.save();
       ctx.fillStyle = '#FFFFFF';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-      ctx.shadowBlur = 12;
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+      ctx.shadowBlur = 8;
       ctx.beginPath();
-      ctx.roundRect(50, 42, logoBoxSize, logoBoxSize, 16);
+      ctx.roundRect(42, 54, logoSize, logoSize, 14);
       ctx.fill();
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1;
+      ctx.stroke();
       ctx.restore();
 
       if (logoImg.complete && logoImg.naturalWidth > 0) {
-        ctx.drawImage(logoImg, 56, 48, logoBoxSize - 12, logoBoxSize - 12);
+        ctx.drawImage(logoImg, 46, 58, logoSize - 8, logoSize - 8);
       } else {
-        ctx.fillStyle = '#1E3A8A';
-        ctx.font = 'bold 22px system-ui, sans-serif';
-        ctx.fillText('GB', 68, 82);
-      }
-
-      // Brand Header Typography
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 22px system-ui, sans-serif';
-      ctx.fillText('GENBI UNMA', 130, 70);
-
-      ctx.fillStyle = 'rgba(191, 219, 254, 0.9)';
-      ctx.font = '500 13px system-ui, sans-serif';
-      ctx.fillText('Bank Indonesia Scholarship Community', 130, 92);
-
-      // Holographic SMART ID Capsule (Top Right)
-      ctx.save();
-      ctx.fillStyle = 'rgba(245, 158, 11, 0.2)';
-      ctx.strokeStyle = 'rgba(251, 191, 36, 0.7)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.roundRect(width - 215, 45, 165, 38, 12);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = '#FDE68A';
-      ctx.font = 'bold 12px system-ui, sans-serif';
-      ctx.fillText('✦ SMART ID CARD', width - 200, 69);
-      ctx.restore();
-
-      // 4. Gold EMV Microchip Graphic
-      const chipX = 50;
-      const chipY = 142;
-      const chipW = 76;
-      const chipH = 56;
-      const chipGrad = ctx.createLinearGradient(chipX, chipY, chipX + chipW, chipY + chipH);
-      chipGrad.addColorStop(0, '#FEF08A');
-      chipGrad.addColorStop(0.5, '#F59E0B');
-      chipGrad.addColorStop(1, '#D97706');
-      ctx.fillStyle = chipGrad;
-      ctx.beginPath();
-      ctx.roundRect(chipX, chipY, chipW, chipH, 8);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(180, 83, 9, 0.6)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
-      // Chip internal circuit lines
-      ctx.strokeStyle = 'rgba(120, 53, 15, 0.55)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(chipX, chipY + 18);
-      ctx.lineTo(chipX + chipW, chipY + 18);
-      ctx.moveTo(chipX, chipY + 38);
-      ctx.lineTo(chipX + chipW, chipY + 38);
-      ctx.moveTo(chipX + 24, chipY);
-      ctx.lineTo(chipX + 24, chipY + 56);
-      ctx.moveTo(chipX + 52, chipY);
-      ctx.lineTo(chipX + 52, chipY + 56);
-      ctx.stroke();
-
-      // Contactless NFC Waves
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(chipX + chipW + 28, chipY + 28, 12, -0.6, 0.6);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(chipX + chipW + 28, chipY + 28, 20, -0.6, 0.6);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(chipX + chipW + 28, chipY + 28, 28, -0.6, 0.6);
-      ctx.stroke();
-
-      // 5. Member Details Typography
-      ctx.fillStyle = '#93C5FD';
-      ctx.font = 'bold 12px system-ui, sans-serif';
-      ctx.fillText('NAMA LENGKAP PENERIMA', 50, 245);
-
-      // Full Name
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = '900 32px system-ui, sans-serif';
-      ctx.fillText(profile.fullName, 50, 285);
-
-      // Badges Row (NPM, Divisi, Role)
-      let curX = 50;
-      const badgeY = 310;
-      const badgeH = 34;
-
-      // NPM Capsule
-      const npmText = profile.npm || profile.nim;
-      ctx.font = 'bold 15px monospace';
-      const npmW = ctx.measureText(npmText).width + 24;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(curX, badgeY, npmW, badgeH, 10);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#E0E7FF';
-      ctx.fillText(npmText, curX + 12, badgeY + 22);
-      curX += npmW + 10;
-
-      // Divisi Capsule
-      const divText = profile.division;
-      ctx.font = 'bold 14px system-ui, sans-serif';
-      const divW = ctx.measureText(divText).width + 24;
-      ctx.fillStyle = 'rgba(37, 99, 235, 0.45)';
-      ctx.strokeStyle = 'rgba(96, 165, 250, 0.4)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(curX, badgeY, divW, badgeH, 10);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#DBEAFE';
-      ctx.fillText(divText, curX + 12, badgeY + 22);
-      curX += divW + 10;
-
-      // Role Badge
-      if (profile.role === 'kadiv') {
-        const kadivText = '★ KEPALA DIVISI';
-        ctx.font = 'bold 13px system-ui, sans-serif';
-        const kadivW = ctx.measureText(kadivText).width + 24;
-        ctx.fillStyle = '#F59E0B';
-        ctx.beginPath();
-        ctx.roundRect(curX, badgeY, kadivW, badgeH, 10);
-        ctx.fill();
-        ctx.fillStyle = '#0F172A';
-        ctx.fillText(kadivText, curX + 12, badgeY + 22);
-        curX += kadivW + 10;
-      } else if (profile.role === 'admin') {
-        const adminText = '🛡️ BPH';
-        ctx.font = 'bold 13px system-ui, sans-serif';
-        const adminW = ctx.measureText(adminText).width + 24;
         ctx.fillStyle = '#1D4ED8';
-        ctx.beginPath();
-        ctx.roundRect(curX, badgeY, adminW, badgeH, 10);
-        ctx.fill();
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(adminText, curX + 12, badgeY + 22);
-        curX += adminW + 10;
+        ctx.font = 'bold 20px system-ui, sans-serif';
+        ctx.fillText('GB', 54, 88);
       }
 
-      // Program Studi jika terisi
-      if (profile.studyProgram) {
-        ctx.fillStyle = 'rgba(191, 219, 254, 0.9)';
-        ctx.font = '500 14px system-ui, sans-serif';
-        ctx.fillText(`Program Studi: ${profile.studyProgram}`, 50, 380);
-      }
+      // Header Brand Typography
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '900 17px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('UNIVERSITAS MAJALENGKA', 106, 76);
 
-      // Bio jika terisi
-      if (profile.bio) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-        ctx.font = 'italic 13px system-ui, sans-serif';
-        ctx.fillText(`"${profile.bio}"`, 50, profile.studyProgram ? 408 : 380);
-      }
+      ctx.fillStyle = '#64748B';
+      ctx.font = '600 11px system-ui, sans-serif';
+      ctx.fillText('GenBI Komisariat UNMA • Energi Untuk Negeri', 106, 96);
 
-      // 6. QR Code Resmi di Sisi Kanan Kartu
-      const qrSize = 148;
-      const qrX = width - qrSize - 50;
-      const qrY = height - qrSize - 90;
-
-      // Background putih QR dengan soft shadow
-      ctx.save();
-      ctx.fillStyle = '#FFFFFF';
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-      ctx.shadowBlur = 14;
+      // Garis Pembatas Header
+      ctx.strokeStyle = '#F1F5F9';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.roundRect(qrX - 10, qrY - 10, qrSize + 20, qrSize + 20, 16);
+      ctx.moveTo(40, 120);
+      ctx.lineTo(width - 40, 120);
+      ctx.stroke();
+
+      // 5. Foto / Avatar Anggota Bulat (Center)
+      const photoX = width / 2;
+      const photoY = 220;
+      const photoR = 64;
+
+      // Ring glow luar
+      ctx.save();
+      ctx.shadowColor = 'rgba(37, 99, 235, 0.2)';
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.arc(photoX, photoY, photoR + 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#2563EB';
       ctx.fill();
       ctx.restore();
 
-      // Ambil QR Code yang sudah dirender di elemen canvas tersembunyi
+      // Background foto putih & inisial/foto
+      ctx.beginPath();
+      ctx.arc(photoX, photoY, photoR, 0, Math.PI * 2);
+      ctx.fillStyle = '#F8FAFC';
+      ctx.fill();
+
+      ctx.fillStyle = '#1E3A8A';
+      ctx.font = '900 52px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(profile.fullName.charAt(0).toUpperCase(), photoX, photoY + 2);
+
+      // 6. Nama Anggota (Gaya Tegas Kapital Suryo Handoko)
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '900 23px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(profile.fullName.toUpperCase(), width / 2, 330);
+
+      // NPM Anggota
+      ctx.fillStyle = '#334155';
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText(profile.npm || profile.nim, width / 2, 360);
+
+      // Divisi & Program Studi
+      ctx.fillStyle = '#1D4ED8';
+      ctx.font = 'bold 13px system-ui, sans-serif';
+      const divLabel = `${profile.division} ${profile.studyProgram ? `• ${profile.studyProgram}` : ''}`;
+      ctx.fillText(divLabel, width / 2, 386);
+
+      // Role Pill Badge
+      let roleText = 'ANGGOTA RESMI';
+      let roleBg = '#F1F5F9';
+      let roleColor = '#334155';
+      if (profile.role === 'kadiv') {
+        roleText = '★ KEPALA DIVISI';
+        roleBg = '#FEF3C7';
+        roleColor = '#92400E';
+      } else if (profile.role === 'admin') {
+        roleText = '🛡️ BPH KOMISARIAT';
+        roleBg = '#DBEAFE';
+        roleColor = '#1E40AF';
+      }
+
+      ctx.font = 'bold 12px system-ui, sans-serif';
+      const badgeW = ctx.measureText(roleText).width + 24;
+      const badgeH = 26;
+      ctx.fillStyle = roleBg;
+      ctx.beginPath();
+      ctx.roundRect(width / 2 - badgeW / 2, 404, badgeW, badgeH, 13);
+      ctx.fill();
+      ctx.fillStyle = roleColor;
+      ctx.fillText(roleText, width / 2, 421);
+
+      // 7. QR Code Besar Terpusat
+      const qrSize = 190;
+      const qrX = width / 2 - qrSize / 2;
+      const qrY = 460;
+
+      // Container Box QR Code Putih dengan Shadow Elegan
+      ctx.save();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.roundRect(qrX - 12, qrY - 12, qrSize + 24, qrSize + 24, 20);
+      ctx.fill();
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+
+      // Ambil QR Code yang sudah ter-render di hidden canvas
       const hiddenQrCanvas = document.getElementById('member-qr-canvas') as HTMLCanvasElement | null;
       if (hiddenQrCanvas) {
         ctx.drawImage(hiddenQrCanvas, qrX, qrY, qrSize, qrSize);
       }
 
-      // Label di bawah QR
-      ctx.fillStyle = '#93C5FD';
-      ctx.font = 'bold 10px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('OFFICIAL SMART ID', qrX + qrSize / 2, qrY + qrSize + 22);
-      ctx.textAlign = 'left';
-
-      // 7. Bottom Institutional Bar
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(50, height - 60);
-      ctx.lineTo(width - 50, height - 60);
-      ctx.stroke();
-
-      ctx.fillStyle = 'rgba(191, 219, 254, 0.9)';
-      ctx.font = 'bold 12px system-ui, sans-serif';
-      ctx.fillText('KOMISARIAT UNIVERSITAS MAJALENGKA', 50, height - 32);
-
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+      // Teks instruksi di bawah QR
+      ctx.fillStyle = '#94A3B8';
       ctx.font = 'bold 11px system-ui, sans-serif';
-      ctx.textAlign = 'right';
-      ctx.fillText('BANK INDONESIA • ENERGI UNTUK NEGERI', width - 50, height - 32);
-      ctx.textAlign = 'left';
+      ctx.textAlign = 'center';
+      ctx.fillText('SCAN UNTUK PRESENSI & VERIFIKASI KEAKTIFAN', width / 2, 696);
 
-      // 8. Trigger Download File PNG
+      // 8. Gelombang Ganda Bawah Khas KTM Universitas Terbuka (Kuning & Biru)
+      // A. Gelombang Kuning / Emas Aksen
+      ctx.beginPath();
+      ctx.moveTo(0, height - 170);
+      ctx.bezierCurveTo(width * 0.28, height - 230, width * 0.65, height - 130, width, height - 160);
+      ctx.lineTo(width, height);
+      ctx.lineTo(0, height);
+      ctx.closePath();
+      ctx.fillStyle = '#F59E0B';
+      ctx.fill();
+
+      // B. Gelombang Biru Korporat Bank Indonesia
+      ctx.beginPath();
+      ctx.moveTo(0, height - 130);
+      ctx.bezierCurveTo(width * 0.32, height - 195, width * 0.68, height - 90, width, height - 115);
+      ctx.lineTo(width, height);
+      ctx.lineTo(0, height);
+      ctx.closePath();
+      ctx.fillStyle = '#1D4ED8';
+      ctx.fill();
+
+      // Teks Domain di dalam Gelombang Biru
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('www.unma.ac.id • simak-genbi.vercel.app', width / 2, height - 42);
+
+      // 9. Simpan & Unduh Berkas PNG
       const image = canvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.href = image;
-      link.download = `SmartID_GenBI_${profile.npm || profile.nim}_${profile.fullName.replace(/\s+/g, '_')}.png`;
+      link.download = `KTM_GenBI_${profile.npm || profile.nim}_${profile.fullName.replace(/\s+/g, '_')}.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      showToast('Smart ID Card berhasil disimpan ke perangkat!', 'success');
+      showToast('KTM / Name Tag Digital berhasil disimpan!', 'success');
     } catch (err: any) {
       showToast('Gagal mengunduh kartu digital: ' + (err?.message || ''), 'error');
     } finally {
@@ -2201,7 +2143,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 px-1">
             <div>
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-100/70 text-blue-800 text-[10px] font-extrabold uppercase tracking-widest mb-1">
-                Portal Resmi Beasiswa Bank Indonesia
+                Komunitas Penerima Beasiswa Bank Indonesia &bull; GenBI UNMA
               </div>
               <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-tight">
                 Halo, {profile.fullName} 👋
@@ -2221,129 +2163,246 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             {/* KOLOM KIRI (md:col-span-5): KARTU ANGGOTA & QUICK ACTIONS */}
             {/* ======================================================== */}
             <div className="md:col-span-5 space-y-4">
-              {/* Kartu ID Anggota Digital (Ultra-Realistic Metallic Glassmorphism) */}
+              {/* Header Tab Pilihan Sisi Kartu (Depan / Belakang) */}
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-1 p-1 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => setCardSide('front')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      cardSide === 'front'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Tampak Depan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCardSide('back')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      cardSide === 'back'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Tampak Belakang
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setCardSide(cardSide === 'front' ? 'back' : 'front')}
+                    className="p-2 rounded-xl bg-white/90 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition cursor-pointer shadow-xs"
+                    title="Putar Sisi Kartu"
+                  >
+                    <RotateCw className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadCardPng}
+                    disabled={isDownloadingCard}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-xs shadow-md shadow-blue-600/20 transition cursor-pointer disabled:opacity-50"
+                    title="Unduh Kartu Gambar PNG Format Standar KTM (300 DPI)"
+                  >
+                    <Download className={`w-3.5 h-3.5 ${isDownloadingCard ? 'animate-bounce' : ''}`} />
+                    <span className="hidden sm:inline">{isDownloadingCard ? 'Mengunduh...' : 'Unduh'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* KARTU VERTIKAL KTM / NAME TAG UNIVERSITAS TERBUKA STYLE */}
               <div
                 ref={memberCardRef}
-                className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-blue-700 via-blue-800 to-indigo-950 text-white p-6 shadow-2xl shadow-blue-900/30 border border-white/20 transition-transform duration-300 hover:scale-[1.01]"
+                className="relative max-w-[340px] w-full mx-auto rounded-[32px] bg-white border border-slate-200/90 shadow-2xl shadow-blue-900/10 overflow-hidden select-none transition-all duration-300"
+                style={{ aspectRatio: '1 / 1.58' }}
               >
-                {/* Visual Glass Sheen Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-tr from-white/10 via-transparent to-white/5 pointer-events-none" />
-                <div className="absolute -top-16 -right-16 w-52 h-52 rounded-full bg-blue-500/20 blur-xl pointer-events-none" />
-                <div className="absolute -bottom-12 -left-12 w-44 h-44 rounded-full bg-indigo-500/20 blur-xl pointer-events-none" />
+                {/* 1. Lubang Tali Lanyard / Name Tag Hole */}
+                <div className="pt-3 pb-1 flex justify-center">
+                  <div className="w-14 h-2.5 rounded-full bg-slate-200/80 border border-slate-300 shadow-inner" />
+                </div>
 
-                {/* Top Row: Brand & Holographic Badge */}
-                <div className="relative z-10 flex justify-between items-start mb-6">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-white p-1 shadow-md border border-white/40 flex items-center justify-center shrink-0">
+                {cardSide === 'front' ? (
+                  /* ================= TAMPAK DEPAN (NAME TAG DENGAN FOTO & QR) ================= */
+                  <div className="h-[calc(100%-24px)] flex flex-col justify-between relative px-5 pt-1 pb-0">
+                    {/* Background Dot-Matrix Watermark (Ala KTM UT) */}
+                    <div className="absolute top-12 left-4 w-28 h-56 bg-[radial-gradient(#94a3b8_1.2px,transparent_1.2px)] [background-size:10px_10px] opacity-40 pointer-events-none" />
+
+                    {/* Header Institusi */}
+                    <div className="relative z-10 flex items-center justify-between pb-2 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-white p-1 border border-slate-200 shadow-xs flex items-center justify-center shrink-0">
+                          <img
+                            src="/logo-genbi.png"
+                            alt="Logo GenBI"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <div>
+                          <h4 className="text-[11px] font-black tracking-tight text-slate-900 leading-none">
+                            UNIVERSITAS MAJALENGKA
+                          </h4>
+                          <p className="text-[9px] font-semibold text-slate-400 tracking-wider uppercase mt-0.5">
+                            Generasi Baru Indonesia
+                          </p>
+                        </div>
+                      </div>
+
+                      {profile.role === 'kadiv' ? (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[9px] uppercase shadow-xs">
+                          Kadiv
+                        </span>
+                      ) : profile.role === 'admin' ? (
+                        <span className="px-2 py-0.5 rounded-full bg-blue-600 text-white font-black text-[9px] uppercase shadow-xs">
+                          BPH
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[9px] uppercase border border-slate-200">
+                          Anggota
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Foto Avatar & Identitas Anggota */}
+                    <div className="relative z-10 text-center my-auto py-2">
+                      {/* Frame Foto Anggota */}
+                      <div className="relative w-20 h-20 mx-auto mb-2.5">
+                        <div className="w-full h-full rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 p-0.5 shadow-md shadow-blue-600/20">
+                          <div className="w-full h-full rounded-full bg-white flex items-center justify-center text-blue-900 font-black text-2xl uppercase overflow-hidden border-2 border-white">
+                            {profile.fullName.charAt(0)}
+                          </div>
+                        </div>
+                        <span className="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center shadow-xs">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                        </span>
+                      </div>
+
+                      {/* Nama Lengkap (Huruf Kapital Tegas seperti KTM) */}
+                      <h3 className="text-sm font-black text-slate-900 tracking-wide uppercase px-2 line-clamp-1 leading-snug">
+                        {profile.fullName}
+                      </h3>
+
+                      {/* NPM & Divisi */}
+                      <p className="text-xs font-mono font-bold text-slate-600 mt-0.5">
+                        {profile.npm || profile.nim}
+                      </p>
+                      <p className="text-[10px] text-blue-700 font-semibold mt-0.5">
+                        {profile.division} {profile.studyProgram ? `• ${profile.studyProgram}` : ''}
+                      </p>
+
+                      {/* QR Code Presensi Nyata */}
+                      <div className="mt-3 inline-block p-2 rounded-2xl bg-white border border-slate-200/90 shadow-sm">
+                        <QRCodeSVG
+                          value={`GENBI-MEMBER:${profile.id}:${profile.npm || profile.nim}:${profile.division}`}
+                          size={110}
+                          level="H"
+                          includeMargin={false}
+                        />
+                      </div>
+                      <span className="text-[8px] font-bold text-slate-400 block uppercase tracking-widest mt-1">
+                        Scan ID Presensi & Verifikasi
+                      </span>
+                    </div>
+
+                    {/* Pita Gelombang Ganda Bawah (KTM UT Wave Signature: Kuning & Biru) */}
+                    <div className="relative w-full mt-auto -mx-5 px-5">
+                      <svg
+                        className="w-full h-14"
+                        viewBox="0 0 340 56"
+                        preserveAspectRatio="none"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        {/* Gelombang Kuning/Emas Aksen */}
+                        <path
+                          d="M0 26C70 12 180 4 340 28V56H0V26Z"
+                          fill="#F59E0B"
+                        />
+                        {/* Gelombang Biru Korporat Utama */}
+                        <path
+                          d="M0 32C90 18 210 12 340 36V56H0V32Z"
+                          fill="#1D4ED8"
+                        />
+                        <text
+                          x="170"
+                          y="49"
+                          fill="#FFFFFF"
+                          fontSize="9"
+                          fontWeight="bold"
+                          textAnchor="middle"
+                          letterSpacing="0.5"
+                        >
+                          www.unma.ac.id • simak-genbi.vercel.app
+                        </text>
+                      </svg>
+                    </div>
+                  </div>
+                ) : (
+                  /* ================= TAMPAK BELAKANG (LAMBANG BESAR & KODE KARTU) ================= */
+                  <div className="h-[calc(100%-24px)] flex flex-col justify-between relative px-5 pt-3 pb-0 text-center">
+                    {/* Header Belakang */}
+                    <div className="border-b border-slate-100 pb-2">
+                      <h4 className="text-xs font-black tracking-wider text-slate-900 uppercase">
+                        KARTU TANDA PENERIMA BEASISWA
+                      </h4>
+                      <p className="text-[9px] text-slate-400 font-medium">
+                        Komisariat Universitas Majalengka
+                      </p>
+                    </div>
+
+                    {/* Lambang Utama GenBI UNMA */}
+                    <div className="my-auto py-2 space-y-2">
+                      <div className="w-24 h-24 rounded-3xl bg-slate-50 border border-slate-200/80 p-3 mx-auto shadow-inner flex items-center justify-center">
                         <img
                           src="/logo-genbi.png"
                           alt="Logo GenBI"
                           className="w-full h-full object-contain"
                         />
                       </div>
-                      <span className="text-[11px] font-black tracking-widest uppercase text-blue-100">
-                        GENBI UNMA
-                      </span>
+                      <h3 className="text-xs font-black tracking-widest uppercase text-slate-900">
+                        UNIVERSITAS MAJALENGKA
+                      </h3>
+                      <p className="text-[10px] text-slate-500 font-medium px-4 leading-relaxed">
+                        "Energi Untuk Negeri &mdash; Frontrunners, Change Agents &amp; Future Leaders of Indonesia"
+                      </p>
+                      <div className="pt-2 px-2 text-[8px] text-slate-400 leading-tight">
+                        Kartu ini adalah identitas resmi penerima Beasiswa Bank Indonesia di lingkungan Universitas Majalengka. Berlaku selama masa kepengurusan aktif.
+                      </div>
                     </div>
-                    <p className="text-[10px] text-blue-200/80 font-medium tracking-wide mt-0.5">
-                      Bank Indonesia Scholarship Member
-                    </p>
-                  </div>
 
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-400/20 backdrop-blur-md border border-amber-300/40 text-[10px] font-black tracking-wider text-amber-300">
-                    <Sparkles className="w-3 h-3 text-amber-300" />
-                    <span>SMART ID</span>
-                  </div>
-                </div>
-
-                {/* Chip EMV & Contactless Waves */}
-                <div className="relative z-10 flex items-center justify-between mb-5">
-                  {/* EMV Microchip SVG */}
-                  <div className="w-11 h-8 rounded-md bg-gradient-to-br from-yellow-200 via-amber-300 to-yellow-500 p-1 shadow-inner border border-amber-600/40 flex flex-col justify-between">
-                    <div className="w-full h-1 border-b border-amber-600/50" />
-                    <div className="w-full flex justify-between">
-                      <div className="w-2.5 h-3 border-r border-amber-600/50" />
-                      <div className="w-2.5 h-3 border-l border-amber-600/50" />
+                    {/* Pita Gelombang Ganda Bawah */}
+                    <div className="relative w-full mt-auto -mx-5 px-5">
+                      <svg
+                        className="w-full h-14"
+                        viewBox="0 0 340 56"
+                        preserveAspectRatio="none"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M0 26C70 12 180 4 340 28V56H0V26Z"
+                          fill="#F59E0B"
+                        />
+                        <path
+                          d="M0 32C90 18 210 12 340 36V56H0V32Z"
+                          fill="#1D4ED8"
+                        />
+                        <text
+                          x="170"
+                          y="49"
+                          fill="#FFFFFF"
+                          fontSize="9"
+                          fontWeight="bold"
+                          textAnchor="middle"
+                          letterSpacing="0.5"
+                        >
+                          www.unma.ac.id • simak-genbi.vercel.app
+                        </text>
+                      </svg>
                     </div>
-                    <div className="w-full h-1 border-t border-amber-600/50" />
                   </div>
-
-                  <div className="text-white/60 flex items-center gap-1">
-                    <Wifi className="w-4 h-4 rotate-90" />
-                  </div>
-                </div>
-
-                {/* Middle: Member Details */}
-                <div className="relative z-10 space-y-1.5 mb-6">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-blue-300">
-                      NAMA LENGKAP PENERIMA
-                    </span>
-                    {profile.role === 'kadiv' && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-400 text-slate-950 font-black text-[9px] uppercase tracking-wider shadow-sm">
-                        <Crown className="w-2.5 h-2.5 text-slate-950" />
-                        Kepala Divisi
-                      </span>
-                    )}
-                    {profile.role === 'admin' && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-400 text-slate-950 font-black text-[9px] uppercase tracking-wider shadow-sm">
-                        <ShieldCheck className="w-2.5 h-2.5 text-slate-950" />
-                        BPH
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-lg sm:text-xl font-black tracking-wide text-white leading-tight">
-                    {profile.fullName}
-                  </h3>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-blue-100/90 font-medium pt-1">
-                    <span className="font-mono bg-black/30 backdrop-blur-md px-2.5 py-0.5 rounded-lg border border-white/10 tracking-widest">
-                      NPM {profile.npm || profile.nim}
-                    </span>
-                    <span>&bull;</span>
-                    <span className="px-2 py-0.5 rounded-lg bg-blue-500/20 border border-blue-400/30 text-[11px] font-bold">
-                      {profile.division}
-                    </span>
-                    {profile.studyProgram && (
-                      <>
-                        <span>&bull;</span>
-                        <span className="text-[11px] text-blue-200">
-                          {profile.studyProgram}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                  {profile.bio && (
-                    <p className="text-[11px] text-blue-200/80 italic pt-1 border-t border-white/10 line-clamp-1">
-                      "{profile.bio}"
-                    </p>
-                  )}
-                </div>
-
-                {/* Bottom Row: Validation & Action */}
-                <div className="relative z-10 flex items-center justify-between pt-4 border-t border-white/15">
-                  <div>
-                    <span className="text-[9px] text-blue-300/80 block uppercase tracking-wider">KOMISARIAT</span>
-                    <span className="text-xs font-bold text-white">Universitas Majalengka</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={handleDownloadCardPng}
-                      disabled={isDownloadingCard}
-                      className="p-2 bg-white/15 hover:bg-white/25 text-white rounded-xl font-extrabold text-xs backdrop-blur-md border border-white/20 transition cursor-pointer"
-                      title="Unduh Kartu Gambar PNG"
-                    >
-                      <Download className={`w-4 h-4 ${isDownloadingCard ? 'animate-bounce' : ''}`} />
-                    </button>
-                    <button
-                      onClick={() => setShowQrModal(true)}
-                      className="flex items-center gap-1.5 px-3.5 py-2 bg-white text-blue-900 rounded-xl font-extrabold text-xs shadow-lg shadow-black/20 hover:bg-blue-50 active:scale-95 transition cursor-pointer"
-                    >
-                      <QrCode className="w-4 h-4 text-blue-700" />
-                      <span>ID QR</span>
-                    </button>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Hidden Canvas untuk Generate Smart ID Card Download PNG */}
@@ -3232,6 +3291,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </div>
           </div>
         </main>
+
+        {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
+        <Footer />
       </div>
 
       {/* Modal ID QR Anggota (High-Res Digital Stamp) */}
@@ -3670,7 +3732,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleAjukanIzin} className="space-y-3 text-left">
+              <div className="space-y-3 text-left">
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-slate-600 uppercase">Pilih Agenda Kegiatan</label>
                   <select
@@ -3774,7 +3836,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 </div>
 
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleAjukanIzin}
                   disabled={isUploadingProof}
                   className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/25 transition cursor-pointer mt-1 disabled:opacity-70 flex items-center justify-center gap-2"
                 >
@@ -3787,7 +3850,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     <span>Kirim Pengajuan Izin</span>
                   )}
                 </button>
-              </form>
+              </div>
             )}
           </div>
         </div>
@@ -3842,7 +3905,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleAjukanDelegasi} className="space-y-3.5 text-left overflow-y-auto pr-1 flex-1">
+              <div className="space-y-3.5 text-left overflow-y-auto pr-1 flex-1">
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-slate-700 uppercase flex items-center justify-between">
                     <span>Nama Agenda / Kegiatan Delegasi *</span>
@@ -3969,7 +4032,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 </div>
 
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleAjukanDelegasi}
                   disabled={isUploadingDelegasi}
                   className="w-full py-3 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 active:scale-[0.98] text-slate-950 font-black text-xs rounded-xl shadow-md shadow-amber-500/25 transition disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
                 >
@@ -3985,7 +4049,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     </>
                   )}
                 </button>
-              </form>
+              </div>
             )}
           </div>
         </div>

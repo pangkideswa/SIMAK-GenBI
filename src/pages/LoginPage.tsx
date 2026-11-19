@@ -15,6 +15,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { verifyUserPin } from '../lib/authSecurity';
 import { SatelliteLoader } from '../components/SatelliteLoader';
+import { Footer } from '../components/Footer';
 import type { Division, Role } from '../types/database';
 
 interface LoginPageProps {
@@ -860,16 +861,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         </div>
       </div>
 
-      {/* Footer Badge Institusional */}
-      <footer className="w-full max-w-md py-4 text-center">
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/70 border border-slate-200/80 shadow-xs text-[11px] font-bold text-slate-600">
-          <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-          <span>GENBI KOMISARIAT UNIVERSITAS MAJALENGKA</span>
-        </div>
-        <p className="mt-1 text-[10px] text-slate-400 font-medium">
-          Bank Indonesia Community Portal &bull; Versi PWA 1.0
-        </p>
-      </footer>
+      {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
+      <Footer className="border-t-0 bg-transparent py-4" />
 
       {/* Modal Dialog Lupa PIN / Reset Password */}
       {showForgotModal && (

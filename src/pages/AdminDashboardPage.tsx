@@ -55,6 +55,7 @@ import {
   filterDeletedEvents,
 } from '../lib/eventSync';
 import { getAcademicPeriods, AcademicPeriod } from '../lib/periodSync';
+import { Footer } from '../components/Footer';
 import {
   recordUnifiedAttendance,
   applyEvaluationsOverrides,
@@ -3010,6 +3011,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </div>
           )}
         </main>
+
+        {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
+        <Footer />
       </div>
 
       {/* Modal Buat Acara Baru */}

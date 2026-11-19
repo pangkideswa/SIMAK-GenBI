@@ -43,6 +43,7 @@ import {
 } from '../lib/auditLog';
 import { AdminDashboardPage } from './AdminDashboardPage';
 import DashboardPage from './DashboardPage';
+import { Footer } from '../components/Footer';
 
 interface SuperAdminPageProps {
   onLogout: () => void;
@@ -1266,6 +1267,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
           </div>
         )}
       </main>
+
+      {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
+      <Footer className="border-t-purple-900/40 bg-slate-900/90 text-slate-300" />
 
       {/* MODAL CRUD PERIODE KEPENGURUSAN */}
       {showPeriodModal && (

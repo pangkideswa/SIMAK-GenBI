@@ -12,15 +12,21 @@ export default defineConfig({
     basicSsl(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['logo-genbi.png'],
+      injectRegister: 'auto',
+      includeAssets: ['logo-genbi.png', 'logo-BI.png'],
       manifest: {
+        id: '/',
         name: 'SIMAK GENBI - Sistem Informasi Manajemen & Keaktifan',
         short_name: 'SIMAK GENBI',
         description: 'Sistem Informasi Manajemen & Keaktifan GenBI Komisariat Universitas Majalengka',
+        start_url: '/',
+        scope: '/',
         theme_color: '#1D4ED8',
         background_color: '#F8FAFC',
         display: 'standalone',
+        display_override: ['standalone', 'window-controls-overlay', 'minimal-ui'],
         orientation: 'portrait-primary',
+        categories: ['education', 'productivity'],
         icons: [
           {
             src: '/logo-genbi.png',
@@ -30,9 +36,21 @@ export default defineConfig({
           },
           {
             src: '/logo-genbi.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+          {
+            src: '/logo-genbi.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'any',
+          },
+          {
+            src: '/logo-genbi.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },

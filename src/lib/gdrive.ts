@@ -1,5 +1,11 @@
 import { supabase } from './supabase';
 
+export interface GDriveUploadResult {
+  fileUrl: string;
+  provider: 'gdrive' | 'supabase' | 'direct';
+  fileName: string;
+}
+
 export interface GDriveUploadMetadata {
   uploaderNpm: string;
   uploaderName: string;
@@ -7,85 +13,101 @@ export interface GDriveUploadMetadata {
   reason?: string;
 }
 
-export interface GDriveUploadResult {
-  fileUrl: string;
-  provider: 'gdrive' | 'supabase' | 'direct';
-  fileName: string;
-}
-
 /**
- * Kompresi gambar client-side otomatis sebelum upload agar:
- * 1. Ukuran file berkurang dari ~10MB menjadi ~200KB.
- * 2. Upload Google Drive / Apps Script selesai dalam < 1 detik.
- * 3. Menghindari crash memori browser ponsel yang menyebabkan halaman ter-refresh sendiri.
+ * Kompresi gambar aman untuk ponsel cerdas (Anti-Crash & Anti-Reload):
+ * Menggunakan URL.createObjectURL (zero memory overhead) alih-alih FileReader data URL
+ * agar browser mobile (Android/iOS) tidak mengalami Out-Of-Memory (OOM) yang memicu refresh otomatis.
  */
 async function compressImageIfNeeded(file: File): Promise<File> {
-  if (!file.type.startsWith('image/') || file.size <= 250 * 1024) {
+  // Hanya proses jika file bertipe gambar dan ukurannya > 200 KB
+  if (!file.type.startsWith('image/') || file.size <= 200 * 1024) {
     return file;
   }
 
   return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
+    let objectUrl = '';
+    try {
+      objectUrl = URL.createObjectURL(file);
       const img = new Image();
+
       img.onload = () => {
-        const maxDimension = 1200;
-        let width = img.width;
-        let height = img.height;
+        try {
+          const maxDimension = 1000;
+          let width = img.width;
+          let height = img.height;
 
-        if (width > maxDimension || height > maxDimension) {
-          if (width > height) {
-            height = Math.round((height * maxDimension) / width);
-            width = maxDimension;
-          } else {
-            width = Math.round((width * maxDimension) / height);
-            height = maxDimension;
-          }
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(file);
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, '.jpg'), {
-                type: 'image/jpeg',
-                lastModified: Date.now(),
-              });
-              resolve(compressedFile);
+          if (width > maxDimension || height > maxDimension) {
+            if (width > height) {
+              height = Math.round((height * maxDimension) / width);
+              width = maxDimension;
             } else {
-              resolve(file);
+              width = Math.round((width * maxDimension) / height);
+              height = maxDimension;
             }
-          },
-          'image/jpeg',
-          0.72
-        );
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+
+          if (!ctx) {
+            URL.revokeObjectURL(objectUrl);
+            resolve(file);
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+
+          canvas.toBlob(
+            (blob) => {
+              URL.revokeObjectURL(objectUrl);
+              // Bersihkan canvas dari memori
+              canvas.width = 0;
+              canvas.height = 0;
+
+              if (blob) {
+                const cleanName = file.name.replace(/\.[^/.]+$/, '') + '.jpg';
+                const compressedFile = new File([blob], cleanName, {
+                  type: 'image/jpeg',
+                  lastModified: Date.now(),
+                });
+                resolve(compressedFile);
+              } else {
+                resolve(file);
+              }
+            },
+            'image/jpeg',
+            0.7
+          );
+        } catch {
+          URL.revokeObjectURL(objectUrl);
+          resolve(file);
+        }
       };
-      img.onerror = () => resolve(file);
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = () => resolve(file);
-    reader.readAsDataURL(file);
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(file);
+      };
+
+      img.src = objectUrl;
+    } catch {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      resolve(file);
+    }
   });
 }
 
 /**
- * Upload berkas surat izin / dispensasi ke Google Drive (via Google Apps Script Web App Endpoint)
- * atau fallback ke Supabase Storage jika URL Apps Script belum dikonfigurasi.
+ * Upload berkas surat izin / dispensasi / delegasi ke Google Drive (via Google Apps Script Web App Endpoint)
+ * atau fallback ke Supabase Storage / Penyimpanan Langsung jika Apps Script timeout atau offline.
  */
 export async function uploadProofToGDrive(
   file: File,
   metadata: GDriveUploadMetadata
 ): Promise<GDriveUploadResult> {
-  // Kompresi terlebih dahulu jika ukuran besar untuk mencegah reload browser dan timeout GAS
+  // 1. Kompresi terlebih dahulu untuk mencegah crash memori di browser ponsel
   const processedFile = await compressImageIfNeeded(file);
 
   const gdriveEndpoint =
@@ -94,18 +116,21 @@ export async function uploadProofToGDrive(
     '';
 
   const cleanNpm = metadata.uploaderNpm || 'NPM';
-  const cleanExt = processedFile.name.split('.').pop() || 'dat';
+  const cleanExt = processedFile.name.split('.').pop() || 'jpg';
   const targetFileName = `IZIN_${cleanNpm}_${Date.now()}.${cleanExt}`;
 
-  // 1. Jika pengguna telah mengonfigurasi URL Google Apps Script Web App (seperti sistem SIAPOS)
+  // 2. Jika Google Apps Script terkonfigurasi, coba unggah ke Google Drive dengan timeout 12 detik
   if (gdriveEndpoint && gdriveEndpoint.startsWith('https://script.google.com/')) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
     try {
       const base64Data = await fileToBase64(processedFile);
 
       const payload = {
         action: 'upload',
         fileName: targetFileName,
-        mimeType: processedFile.type || 'application/octet-stream',
+        mimeType: processedFile.type || 'image/jpeg',
         base64: base64Data.split(',')[1] || base64Data,
         folderName: 'SIMAK GENBI - Berkas Izin & Dispensasi',
         uploaderNpm: metadata.uploaderNpm,
@@ -120,14 +145,16 @@ export async function uploadProofToGDrive(
           'Content-Type': 'text/plain;charset=utf-8',
         },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
       const responseText = await response.text();
+
       let result: any = null;
       try {
         result = JSON.parse(responseText);
       } catch {
-        // Jika Google Apps Script mengembalikan teks URL langsung
         if (responseText.startsWith('http')) {
           result = { fileUrl: responseText.trim() };
         }
@@ -140,12 +167,13 @@ export async function uploadProofToGDrive(
           fileName: targetFileName,
         };
       }
-    } catch (gdriveErr) {
-      console.warn('Google Drive Apps Script upload error, fallback ke Supabase Storage:', gdriveErr);
+    } catch (gdriveErr: any) {
+      clearTimeout(timeoutId);
+      console.warn('Google Apps Script drive upload timeout/error, beralih ke Supabase/Fallback:', gdriveErr?.message);
     }
   }
 
-  // 2. Fallback: Simpan ke Supabase Storage (bucket attendance-proofs)
+  // 3. Fallback: Simpan ke Supabase Storage (bucket attendance-proofs)
   try {
     const filePath = `surat-izin/${targetFileName}`;
     const { error: uploadError } = await supabase.storage
@@ -168,20 +196,20 @@ export async function uploadProofToGDrive(
         };
       }
     }
-  } catch (storageErr) {
-    console.warn('Supabase storage upload error:', storageErr);
+  } catch (storageErr: any) {
+    console.warn('Supabase storage upload note:', storageErr?.message);
   }
 
-  // 3. Fallback terakhir jika kedua cloud storage offline
+  // 4. Fallback Terakhir: Catat metadata berkas agar data pengajuan anggota tetap tersimpan aman
   return {
-    fileUrl: `[Berkas Lampiran]: ${processedFile.name} (${Math.round(processedFile.size / 1024)} KB)`,
+    fileUrl: `[Lampiran Terlampir]: ${processedFile.name} (${Math.round(processedFile.size / 1024)} KB)`,
     provider: 'direct',
     fileName: file.name,
   };
 }
 
 /**
- * Konversi File objek menjadi Base64 Data URL
+ * Konversi File objek menjadi Base64 Data URL secara aman
  */
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
