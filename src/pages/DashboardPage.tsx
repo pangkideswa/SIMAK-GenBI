@@ -42,6 +42,7 @@ import {
   EyeOff,
   Bell,
   RotateCw,
+  Trash2,
 } from 'lucide-react';
 import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -318,7 +319,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     phone: null,
     studyProgram: null,
     bio: null,
-    avatarUrl: null,
+    avatarUrl: (() => {
+      try {
+        return localStorage.getItem('simak_avatar_' + user.id) || null;
+      } catch {
+        return null;
+      }
+    })(),
   });
 
   const [events, setEvents] = useState<EventType[]>(DEFAULT_SAMPLE_EVENTS);
@@ -352,7 +359,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       full_name: user.fullName,
       division: user.division as any,
       role: user.role,
-      avatar_url: null,
+      avatar_url: (() => {
+        try {
+          return localStorage.getItem('simak_avatar_' + user.id) || null;
+        } catch {
+          return null;
+        }
+      })(),
       total_points: user.role === 'admin' ? 95 : user.role === 'kadiv' ? 85 : 60,
       total_hadir: user.role === 'admin' ? 7 : user.role === 'kadiv' ? 6 : 4,
       total_izin: 0,
@@ -451,6 +464,183 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [keteranganIzin, setKeteranganIzin] = useState('');
   const [izinSuccess, setIzinSuccess] = useState(false);
 
+  // Foto Profil ID Card & Akun Anggota
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper kompresi foto profil menjadi format persegi (Square 1:1) dan hemat memori
+  const processProfileImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      if (!file.type.startsWith('image/')) {
+        reject(new Error('File yang dipilih bukan berkas gambar.'));
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      const img = new Image();
+
+      img.onload = () => {
+        try {
+          // Hitung crop 1:1 di tengah (center crop)
+          const size = Math.min(img.width, img.height);
+          const startX = (img.width - size) / 2;
+          const startY = (img.height - size) / 2;
+
+          const targetSize = 400; // Resolusi 400x400 sangat tajam untuk ID Card & avatar
+          const canvas = document.createElement('canvas');
+          canvas.width = targetSize;
+          canvas.height = targetSize;
+          const ctx = canvas.getContext('2d');
+
+          if (!ctx) {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error('Gagal memproses gambar pada canvas.'));
+            return;
+          }
+
+          ctx.drawImage(img, startX, startY, size, size, 0, 0, targetSize, targetSize);
+          const base64Data = canvas.toDataURL('image/jpeg', 0.85);
+
+          // Bersihkan memori canvas & object URL
+          canvas.width = 0;
+          canvas.height = 0;
+          URL.revokeObjectURL(objectUrl);
+
+          resolve(base64Data);
+        } catch (err) {
+          URL.revokeObjectURL(objectUrl);
+          reject(err);
+        }
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Gagal memuat berkas gambar.'));
+      };
+
+      img.src = objectUrl;
+    });
+  };
+
+  const handleAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingAvatar(true);
+    try {
+      const base64Avatar = await processProfileImage(file);
+
+      // 1. Simpan langsung ke cache lokal agar ID Card langsung menampilkan foto tanpa delay
+      try {
+        localStorage.setItem('simak_avatar_' + user.id, base64Avatar);
+      } catch {}
+
+      setProfile((prev) => ({
+        ...prev,
+        avatarUrl: base64Avatar,
+      }));
+
+      // 2. Sinkronisasi ke Supabase
+      let finalUrl = base64Avatar;
+      if (!user.id.startsWith('demo-')) {
+        try {
+          const response = await fetch(base64Avatar);
+          const blob = await response.blob();
+          const cleanNpm = profile.npm || profile.nim || user.id;
+          const fileName = `avatar_${cleanNpm}_${Date.now()}.jpg`;
+
+          const { error: storageError } = await supabase.storage
+            .from('avatars')
+            .upload(fileName, blob, {
+              contentType: 'image/jpeg',
+              upsert: true,
+            });
+
+          if (!storageError) {
+            const { data: publicData } = supabase.storage
+              .from('avatars')
+              .getPublicUrl(fileName);
+            if (publicData?.publicUrl) {
+              finalUrl = publicData.publicUrl;
+              try {
+                localStorage.setItem('simak_avatar_' + user.id, finalUrl);
+              } catch {}
+              setProfile((prev) => ({
+                ...prev,
+                avatarUrl: finalUrl,
+              }));
+            }
+          }
+        } catch (storageErr) {
+          console.warn('Storage upload note:', storageErr);
+        }
+
+        // Update kolom avatar_url di tabel profiles
+        await (supabase.from('profiles') as any)
+          .update({ avatar_url: finalUrl })
+          .eq('id', user.id);
+
+        // Update juga di member_evaluations agar sinkron di seluruh leaderboard & sistem
+        await (supabase.from('member_evaluations') as any)
+          .update({ avatar_url: finalUrl })
+          .eq('user_id', user.id);
+      }
+
+      setLeaderboard((prev) =>
+        prev.map((item) =>
+          item.user_id === user.id ? { ...item, avatar_url: finalUrl } : item
+        )
+      );
+
+      showToast('Foto profil ID Card berhasil dipasang dan tersinkronisasi!', 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Gagal memproses foto profil.', 'error');
+    } finally {
+      setIsUploadingAvatar(false);
+      if (avatarFileInputRef.current) {
+        avatarFileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    if (!confirm('Apakah Anda yakin ingin menghapus foto profil ini?')) return;
+
+    setIsUploadingAvatar(true);
+    try {
+      try {
+        localStorage.removeItem('simak_avatar_' + user.id);
+      } catch {}
+
+      setProfile((prev) => ({
+        ...prev,
+        avatarUrl: null,
+      }));
+
+      if (!user.id.startsWith('demo-')) {
+        await (supabase.from('profiles') as any)
+          .update({ avatar_url: null })
+          .eq('id', user.id);
+
+        await (supabase.from('member_evaluations') as any)
+          .update({ avatar_url: null })
+          .eq('user_id', user.id);
+      }
+
+      setLeaderboard((prev) =>
+        prev.map((item) =>
+          item.user_id === user.id ? { ...item, avatar_url: null } : item
+        )
+      );
+
+      showToast('Foto profil berhasil dihapus.', 'info');
+    } catch (err: any) {
+      showToast(err.message || 'Gagal menghapus foto profil.', 'error');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
   // Toast Notification State
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
@@ -518,6 +708,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         const cleanId = normalizeStudentId(studentId);
         const ov = overrides[cleanId];
 
+        const cachedAvatar = (() => {
+          try {
+            return localStorage.getItem('simak_avatar_' + user.id);
+          } catch {
+            return null;
+          }
+        })();
+        const effectiveAvatar = p.avatar_url || cachedAvatar || null;
+        if (p.avatar_url && p.avatar_url !== cachedAvatar) {
+          try {
+            localStorage.setItem('simak_avatar_' + user.id, p.avatar_url);
+          } catch {}
+        }
+
         setProfile({
           id: p.id,
           npm: studentId,
@@ -528,7 +732,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           phone: p.phone || null,
           studyProgram: p.study_program || null,
           bio: p.bio || null,
-          avatarUrl: p.avatar_url || null,
+          avatarUrl: effectiveAvatar,
         });
         setEditFullName(ov?.full_name || p.full_name || user.fullName);
         setEditPhone(p.phone || '');
@@ -690,7 +894,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           full_name: ev.full_name || profile.fullName,
           division: ev.division || (profile.division as any),
           role: ev.role || profile.role,
-          avatar_url: ev.avatar_url || null,
+          avatar_url: ev.avatar_url || (() => {
+            try {
+              return localStorage.getItem('simak_avatar_' + user.id) || null;
+            } catch {
+              return null;
+            }
+          })(),
           total_points: Number(ev.total_points ?? 0),
           total_hadir: Number(ev.total_hadir ?? 0),
           total_izin: Number(ev.total_izin ?? 0),
@@ -1884,7 +2094,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 text-xs font-bold transition cursor-pointer"
               title="Pengaturan Profil Anggota"
             >
-              <Settings className="w-3.5 h-3.5 text-slate-500" />
+              {profile.avatarUrl ? (
+                <img
+                  src={profile.avatarUrl}
+                  alt={profile.fullName}
+                  className="w-4 h-4 rounded-full object-cover shrink-0"
+                />
+              ) : (
+                <Settings className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+              )}
               <span className="hidden sm:inline">Profil</span>
             </button>
 
@@ -1983,6 +2201,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
+                    onClick={() => avatarFileInputRef.current?.click()}
+                    disabled={isUploadingAvatar}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/90 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 text-xs font-bold transition cursor-pointer shadow-xs disabled:opacity-50"
+                    title="Pasang atau ganti foto profil ID Card"
+                  >
+                    <Camera className={`w-3.5 h-3.5 text-blue-600 ${isUploadingAvatar ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline">
+                      {isUploadingAvatar ? 'Memproses...' : profile.avatarUrl ? 'Ganti Foto' : 'Foto'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setCardSide(cardSide === 'front' ? 'back' : 'front')}
                     className="p-2 rounded-xl bg-white/90 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition cursor-pointer shadow-xs"
                     title="Putar Sisi Kartu"
@@ -2059,14 +2289,38 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     {/* Center: Foto Avatar & Identitas Lengkap Anggota */}
                     <div className="relative z-10 text-center my-auto py-1">
                       {/* Avatar Profile Ring */}
-                      <div className="relative w-18 h-18 mx-auto mb-2">
-                        <div className="w-full h-full rounded-full p-0.5 bg-gradient-to-tr from-amber-400 via-blue-400 to-indigo-400 shadow-xl shadow-blue-900/50">
+                      <div
+                        onClick={() => avatarFileInputRef.current?.click()}
+                        className="group relative w-19 h-19 mx-auto mb-2 cursor-pointer"
+                        title="Klik untuk memasang / mengganti foto profil ID Card"
+                      >
+                        <div className="w-full h-full rounded-full p-0.5 bg-gradient-to-tr from-amber-400 via-blue-400 to-indigo-400 shadow-xl shadow-blue-900/50 relative overflow-hidden">
                           <div className="w-full h-full rounded-full bg-slate-900 border-2 border-white flex items-center justify-center text-white font-black text-2xl uppercase overflow-hidden">
-                            {profile.fullName.charAt(0)}
+                            {profile.avatarUrl ? (
+                              <img
+                                src={profile.avatarUrl}
+                                alt={profile.fullName}
+                                className="w-full h-full object-cover"
+                                crossOrigin="anonymous"
+                              />
+                            ) : (
+                              profile.fullName.charAt(0)
+                            )}
+                          </div>
+
+                          {/* Hover Overlay Kamera */}
+                          <div className="absolute inset-0 bg-slate-950/60 rounded-full flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[9px] font-bold">
+                            <Camera className="w-4 h-4 text-white mb-0.5" />
+                            <span>{profile.avatarUrl ? 'Ganti' : 'Pasang'}</span>
                           </div>
                         </div>
+
                         <span className="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center shadow-xs">
-                          <CheckCircle2 className="w-3 h-3 text-white" />
+                          {profile.avatarUrl ? (
+                            <CheckCircle2 className="w-3 h-3 text-white" />
+                          ) : (
+                            <Camera className="w-2.5 h-2.5 text-white" />
+                          )}
                         </span>
                       </div>
 
@@ -2178,6 +2432,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* Petunjuk pasang foto jika belum ada foto profil */}
+              {!profile.avatarUrl && (
+                <div
+                  onClick={() => avatarFileInputRef.current?.click()}
+                  className="mt-2 text-center p-2.5 rounded-2xl bg-blue-50/80 border border-blue-200/80 cursor-pointer hover:bg-blue-100/70 transition shadow-xs"
+                >
+                  <p className="text-[11px] font-bold text-blue-800 flex items-center justify-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>Klik di sini untuk pasang foto resmi Anda pada ID Card</span>
+                  </p>
+                </div>
+              )}
 
               {/* Hidden Canvas untuk Generate Smart ID Card Download PNG */}
               <div style={{ display: 'none' }} aria-hidden="true">
@@ -2878,6 +3145,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                   >
                                     {rankNumber}
                                   </span>
+
+                                  {member.avatar_url ? (
+                                    <img
+                                      src={member.avatar_url}
+                                      alt=""
+                                      className="w-7 h-7 rounded-full object-cover shrink-0 border border-slate-200"
+                                    />
+                                  ) : (
+                                    <div className="w-7 h-7 rounded-full bg-slate-200/80 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
+                                      {member.full_name?.charAt(0)}
+                                    </div>
+                                  )}
 
                                   <div className="min-w-0">
                                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -3852,6 +4131,56 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               </p>
             </div>
 
+            {/* Foto Profil Anggota & ID Card */}
+            <div className="flex items-center gap-4 p-3 rounded-2xl bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-slate-50 border border-blue-100/80">
+              <div
+                onClick={() => avatarFileInputRef.current?.click()}
+                className="group relative w-16 h-16 rounded-full shrink-0 p-0.5 bg-gradient-to-tr from-blue-600 to-indigo-600 shadow-md cursor-pointer"
+                title="Pilih foto profil"
+              >
+                <div className="w-full h-full rounded-full bg-slate-900 border-2 border-white flex items-center justify-center text-white font-black text-xl uppercase overflow-hidden">
+                  {profile.avatarUrl ? (
+                    <img src={profile.avatarUrl} alt={profile.fullName} className="w-full h-full object-cover" />
+                  ) : (
+                    profile.fullName.charAt(0)
+                  )}
+                </div>
+                <div className="absolute inset-0 bg-slate-950/60 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Camera className="w-5 h-5 text-white" />
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                  Foto ID Card & Profil
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Foto otomatis tersinkronisasi dengan ID Card dan akun Anda.
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => avatarFileInputRef.current?.click()}
+                    disabled={isUploadingAvatar}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold shadow-xs transition cursor-pointer disabled:opacity-50"
+                  >
+                    <Camera className="w-3 h-3" />
+                    <span>{isUploadingAvatar ? 'Memproses...' : profile.avatarUrl ? 'Ganti Foto' : 'Unggah Foto'}</span>
+                  </button>
+                  {profile.avatarUrl && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveAvatar}
+                      disabled={isUploadingAvatar}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 text-[11px] font-bold transition cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Hapus</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <form onSubmit={handleSaveProfile} className="space-y-3 pt-1">
               {/* Nama Lengkap */}
               <div className="space-y-1">
@@ -4046,6 +4375,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
         </div>
       )}
+
+      {/* Hidden File Input untuk Unggah Foto Profil Anggota */}
+      <input
+        ref={avatarFileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleAvatarFileChange}
+      />
 
       {/* Modal Cetak Rapor Keaktifan & Rekomendasi Beasiswa Bank Indonesia */}
       {showReportModal && (

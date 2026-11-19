@@ -2525,16 +2525,31 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           return (
                             <tr key={m.user_id} className="hover:bg-slate-50/70 transition">
                               <td className="py-2.5 px-3.5">
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-extrabold text-slate-900 block">{m.full_name}</span>
-                                  {m.role === 'kadiv' && (
-                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-black">
-                                      <Crown className="w-2.5 h-2.5 text-amber-700" />
-                                      Kadiv
-                                    </span>
+                                <div className="flex items-center gap-2.5">
+                                  {m.avatar_url ? (
+                                    <img
+                                      src={m.avatar_url}
+                                      alt=""
+                                      className="w-7 h-7 rounded-full object-cover shrink-0 border border-slate-200"
+                                    />
+                                  ) : (
+                                    <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
+                                      {m.full_name?.charAt(0)}
+                                    </div>
                                   )}
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-extrabold text-slate-900 block truncate">{m.full_name}</span>
+                                      {m.role === 'kadiv' && (
+                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-black shrink-0">
+                                          <Crown className="w-2.5 h-2.5 text-amber-700" />
+                                          Kadiv
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="font-mono text-[10px] text-slate-400">{m.npm || m.nim}</span>
+                                  </div>
                                 </div>
-                                <span className="font-mono text-[10px] text-slate-400">{m.npm || m.nim}</span>
                               </td>
                               <td className="py-2.5 px-3 font-medium text-slate-600">{m.division}</td>
                               <td className="py-2.5 px-3 text-center font-bold text-slate-800">
