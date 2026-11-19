@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@keyframes qrScanBeam {
+  0% {
+    top: 8%;
+    opacity: 0.4;
+  }
+  50% {
+    top: 92%;
+    opacity: 1;
+  }
+  100% {
+    top: 8%;
+    opacity: 0.4;
+  }
+}
+
+.animate-scan-beam {
+  animation: qrScanBeam 2.4s ease-in-out infinite;
+}
+
+/* Animasi Satelit Mengitari Logo GenBI UNMA */
+@keyframes satelliteOrbit {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes satelliteCounter {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(-360deg);
+  }
+}
+
+.animate-satellite-orbit {
+  animation: satelliteOrbit 3.6s linear infinite;
+}
+
+.animate-satellite-orbit-slow {
+  animation: satelliteOrbit 6s linear infinite reverse;
+}
+
+.animate-satellite-counter {
+  animation: satelliteCounter 3.6s linear infinite;
+}
+
+/* Html5Qrcode styling overrides for clean glassmorphism */
+#qr-reader {
+  border: none !important;
+  background: #090d16 !important;
+}
+
+#qr-reader video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 1.25rem !important;
+}
+
+#qr-reader__scan_region {
+  background: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#qr-reader__scan_region video {
+  border-radius: 1.25rem !important;
+}
+
+#qr-reader__dashboard {
+  display: none !important;
+}
