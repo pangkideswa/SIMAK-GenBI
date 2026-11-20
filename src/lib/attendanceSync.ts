@@ -350,6 +350,75 @@ export async function recordUnifiedAttendance(
 }
 
 /**
+ * Mengambil foto avatar pengguna secara cerdas dengan fallback berlapis:
+ * 1. userOrItem.avatar_url (URL valid)
+ * 2. localStorage: simak_avatar_{userId}
+ * 3. localStorage: simak_avatar_{cleanNpm}
+ * 4. localStorage: simak_user_session
+ * 5. Supabase / overrides
+ */
+export function resolveAvatarUrl(userOrItem: any): string | null {
+  if (!userOrItem) return null;
+  if (
+    userOrItem.avatar_url &&
+    typeof userOrItem.avatar_url === 'string' &&
+    userOrItem.avatar_url.trim().length > 10
+  ) {
+    return userOrItem.avatar_url;
+  }
+  const userId = userOrItem.user_id || userOrItem.userId || userOrItem.id;
+  const cleanNpm = normalizeStudentId(
+    userOrItem.npm || userOrItem.nim || userOrItem.userNpm
+  );
+
+  if (userId) {
+    try {
+      const saved = localStorage.getItem(`simak_avatar_${userId}`);
+      if (saved && typeof saved === 'string' && saved.trim().length > 10) return saved;
+    } catch {}
+  }
+
+  if (cleanNpm) {
+    try {
+      const saved = localStorage.getItem(`simak_avatar_${cleanNpm}`);
+      if (saved && typeof saved === 'string' && saved.trim().length > 10) return saved;
+    } catch {}
+  }
+
+  // Cek jika tersimpan di session login
+  try {
+    const rawSession = localStorage.getItem('simak_user_session');
+    if (rawSession) {
+      const sess = JSON.parse(rawSession);
+      const sessNpm = normalizeStudentId(sess.npm || sess.nim);
+      if ((sess.id === userId || (cleanNpm && sessNpm === cleanNpm)) && sess.avatarUrl) {
+        return sess.avatarUrl;
+      }
+    }
+  } catch {}
+
+  // Cek pencarian prefix key simak_avatar_ di localStorage jika tersimpan dengan ID / NPM terkait
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('simak_avatar_')) {
+        const val = localStorage.getItem(key);
+        if (val && val.length > 50) {
+          if (cleanNpm && key.includes(cleanNpm)) {
+            return val;
+          }
+          if (userId && key.includes(userId)) {
+            return val;
+          }
+        }
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+/**
  * Gabungkan data evaluasi dari Supabase dengan Overrides Lokal
  * Menjamin poin yang bertambah tidak pernah hilang saat refresh / re-fetch
  * Selalu mengesampingkan dan memfilter akun Super Admin agar tidak masuk ke leaderboard / rekap
@@ -371,9 +440,11 @@ export function applyEvaluationsOverrides(
     .map((item) => {
       const cleanId = normalizeStudentId(item.npm || item.nim);
       const ov = overrides[cleanId] || overrides[item.user_id];
+      const effectiveAvatar = resolveAvatarUrl(item) || resolveAvatarUrl(ov);
       if (ov) {
         return {
           ...item,
+          avatar_url: effectiveAvatar,
           total_points: ov.total_points ?? item.total_points,
           total_hadir: ov.total_hadir ?? item.total_hadir,
           total_izin: ov.total_izin ?? item.total_izin,
@@ -382,7 +453,10 @@ export function applyEvaluationsOverrides(
           predicate: ov.predicate ?? item.predicate,
         };
       }
-      return item;
+      return {
+        ...item,
+        avatar_url: effectiveAvatar,
+      };
     });
 
   // Tambahkan juga jika ada user override yang belum ada di baseList (kecuali Super Admin)
@@ -396,7 +470,10 @@ export function applyEvaluationsOverrides(
           m.user_id === ovItem.user_id
       )
     ) {
-      merged.push(ovItem);
+      merged.push({
+        ...ovItem,
+        avatar_url: resolveAvatarUrl(ovItem),
+      });
     }
   }
 

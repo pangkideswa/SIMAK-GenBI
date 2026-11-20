@@ -1000,6 +1000,19 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   useEffect(() => {
     purgeSuperAdminFromCache();
+
+    // Pastikan avatar user saat ini tersimpan di key NPM & ID agar tersinkronisasi 100%
+    try {
+      const cleanUserNpm = normalizeStudentId(user.npm || user.nim || '');
+      const avatarById = user.id ? localStorage.getItem('simak_avatar_' + user.id) : null;
+      const avatarByNpm = cleanUserNpm ? localStorage.getItem('simak_avatar_' + cleanUserNpm) : null;
+      const effectiveAvatar = avatarById || avatarByNpm;
+      if (effectiveAvatar) {
+        if (user.id && !avatarById) localStorage.setItem('simak_avatar_' + user.id, effectiveAvatar);
+        if (cleanUserNpm && !avatarByNpm) localStorage.setItem('simak_avatar_' + cleanUserNpm, effectiveAvatar);
+      }
+    } catch {}
+
     loadAdminData();
     loadWhitelistMembers();
 
@@ -1086,6 +1099,23 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       }
     };
 
+    const handleAvatarUpdated = (e: any) => {
+      const detail = e?.detail;
+      if (!detail) return;
+      const cleanNpm = normalizeStudentId(detail.npm || '');
+      setEvaluations((prev) =>
+        prev.map((ev) => {
+          if (
+            ev.user_id === detail.userId ||
+            (cleanNpm && normalizeStudentId(ev.npm || ev.nim) === cleanNpm)
+          ) {
+            return { ...ev, avatar_url: detail.avatarUrl };
+          }
+          return ev;
+        })
+      );
+    };
+
     window.addEventListener('simak_member_sync', handleSyncEvent);
     window.addEventListener('simak_event_sync', handleEventSync);
     window.addEventListener('simak_event_lock_sync', handleLockSync);
@@ -1095,6 +1125,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     window.addEventListener('simak_attendance_sync', handleAttSubmitted);
     window.addEventListener('simak_evaluations_sync', handleAttSubmitted);
     window.addEventListener('simak_period_sync', handlePeriodSync);
+    window.addEventListener('simak_avatar_updated', handleAvatarUpdated);
 
     return () => {
       window.removeEventListener('simak_member_sync', handleSyncEvent);
@@ -1106,6 +1137,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       window.removeEventListener('simak_attendance_sync', handleAttSubmitted);
       window.removeEventListener('simak_evaluations_sync', handleAttSubmitted);
       window.removeEventListener('simak_period_sync', handlePeriodSync);
+      window.removeEventListener('simak_avatar_updated', handleAvatarUpdated);
     };
   }, []);
 
@@ -2713,8 +2745,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <div className="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-black uppercase">
                           🥈 Peringkat #2
                         </div>
-                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-200 to-slate-100 ring-4 ring-slate-300 shadow-md flex items-center justify-center text-slate-700 font-black text-xl mt-2">
-                          {evaluations[1].full_name.charAt(0)}
+                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-200 to-slate-100 ring-4 ring-slate-300 shadow-md flex items-center justify-center text-slate-700 font-black text-xl mt-2 overflow-hidden relative">
+                          {evaluations[1].avatar_url ? (
+                            <img
+                              src={evaluations[1].avatar_url}
+                              alt={evaluations[1].full_name}
+                              className="w-full h-full object-cover"
+                              crossOrigin="anonymous"
+                            />
+                          ) : (
+                            evaluations[1].full_name.charAt(0)
+                          )}
                         </div>
                         <div className="space-y-0.5">
                           <h4 className="text-sm font-black text-slate-900 line-clamp-1">
@@ -2753,8 +2794,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <Crown className="w-3.5 h-3.5 fill-slate-950" />
                           <span>🥇 JUARA #1 TERAKTIF</span>
                         </div>
-                        <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-400 to-yellow-200 ring-4 ring-amber-300 shadow-lg flex items-center justify-center text-slate-950 font-black text-2xl">
-                          {evaluations[0].full_name.charAt(0)}
+                        <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-400 to-yellow-200 ring-4 ring-amber-300 shadow-lg flex items-center justify-center text-slate-950 font-black text-2xl overflow-hidden relative">
+                          {evaluations[0].avatar_url ? (
+                            <img
+                              src={evaluations[0].avatar_url}
+                              alt={evaluations[0].full_name}
+                              className="w-full h-full object-cover"
+                              crossOrigin="anonymous"
+                            />
+                          ) : (
+                            evaluations[0].full_name.charAt(0)
+                          )}
                         </div>
                         <div className="space-y-0.5">
                           <h4 className="text-base font-black text-slate-900 line-clamp-1">
@@ -2791,8 +2841,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <div className="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase">
                           🥉 Peringkat #3
                         </div>
-                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-200 to-amber-100 ring-4 ring-amber-700/30 shadow-md flex items-center justify-center text-amber-900 font-black text-xl mt-2">
-                          {evaluations[2].full_name.charAt(0)}
+                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-200 to-amber-100 ring-4 ring-amber-700/30 shadow-md flex items-center justify-center text-amber-900 font-black text-xl mt-2 overflow-hidden relative">
+                          {evaluations[2].avatar_url ? (
+                            <img
+                              src={evaluations[2].avatar_url}
+                              alt={evaluations[2].full_name}
+                              className="w-full h-full object-cover"
+                              crossOrigin="anonymous"
+                            />
+                          ) : (
+                            evaluations[2].full_name.charAt(0)
+                          )}
                         </div>
                         <div className="space-y-0.5">
                           <h4 className="text-sm font-black text-slate-900 line-clamp-1">
@@ -2903,17 +2962,33 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             </td>
 
                             <td className="py-3.5 px-4">
-                              <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
-                                <span>{ev.full_name}</span>
-                                {ev.role === 'admin' && (
-                                  <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 border border-purple-200 text-[9px] font-black uppercase">
-                                    BPH
-                                  </span>
+                              <div className="flex items-center gap-3">
+                                {ev.avatar_url ? (
+                                  <img
+                                    src={ev.avatar_url}
+                                    alt={ev.full_name}
+                                    className="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-200 shadow-xs"
+                                    crossOrigin="anonymous"
+                                  />
+                                ) : (
+                                  <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
+                                    {ev.full_name?.charAt(0)}
+                                  </div>
                                 )}
+                                <div>
+                                  <div className="font-extrabold text-slate-900 flex items-center gap-1.5">
+                                    <span>{ev.full_name}</span>
+                                    {ev.role === 'admin' && (
+                                      <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 border border-purple-200 text-[9px] font-black uppercase">
+                                        BPH
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="font-mono text-[11px] text-slate-400 font-bold block">
+                                    {ev.npm || ev.nim || '-'}
+                                  </span>
+                                </div>
                               </div>
-                              <span className="font-mono text-[11px] text-slate-400 font-bold block">
-                                {ev.npm || ev.nim || '-'}
-                              </span>
                             </td>
 
                             <td className="py-3.5 px-4">

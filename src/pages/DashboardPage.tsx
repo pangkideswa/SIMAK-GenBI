@@ -580,10 +580,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     setIsUploadingAvatar(true);
     try {
       const base64Avatar = await processProfileImage(file);
+      const cleanNpm = normalizeStudentId(profile.npm || profile.nim || user.npm || user.nim || '');
 
-      // 1. Simpan langsung ke cache lokal agar ID Card langsung menampilkan foto tanpa delay
+      // 1. Simpan langsung ke cache lokal agar ID Card & Leaderboard langsung menampilkan foto tanpa delay
       try {
         localStorage.setItem('simak_avatar_' + user.id, base64Avatar);
+        if (cleanNpm) {
+          localStorage.setItem('simak_avatar_' + cleanNpm, base64Avatar);
+        }
       } catch {}
 
       setProfile((prev) => ({
@@ -597,8 +601,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         try {
           const response = await fetch(base64Avatar);
           const blob = await response.blob();
-          const cleanNpm = profile.npm || profile.nim || user.id;
-          const fileName = `avatar_${cleanNpm}_${Date.now()}.jpg`;
+          const fileName = `avatar_${cleanNpm || user.id}_${Date.now()}.jpg`;
 
           const { error: storageError } = await supabase.storage
             .from('avatars')
@@ -615,6 +618,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               finalUrl = publicData.publicUrl;
               try {
                 localStorage.setItem('simak_avatar_' + user.id, finalUrl);
+                if (cleanNpm) localStorage.setItem('simak_avatar_' + cleanNpm, finalUrl);
               } catch {}
               setProfile((prev) => ({
                 ...prev,
@@ -637,9 +641,43 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           .eq('user_id', user.id);
       }
 
+      // Update juga di simak_evaluations_overrides
+      try {
+        const rawOv = localStorage.getItem(EVALUATIONS_OVERRIDES_KEY);
+        let ovMap: Record<string, any> = rawOv ? JSON.parse(rawOv) : {};
+        if (ovMap[user.id]) ovMap[user.id] = { ...ovMap[user.id], avatar_url: finalUrl };
+        if (cleanNpm && ovMap[cleanNpm]) ovMap[cleanNpm] = { ...ovMap[cleanNpm], avatar_url: finalUrl };
+        localStorage.setItem(EVALUATIONS_OVERRIDES_KEY, JSON.stringify(ovMap));
+      } catch {}
+
+      // Update di simak_leaderboard_cache
+      try {
+        const rawLb = localStorage.getItem('simak_leaderboard_cache');
+        if (rawLb) {
+          const lb = JSON.parse(rawLb);
+          const updatedLb = lb.map((item: any) =>
+            item.user_id === user.id || (cleanNpm && normalizeStudentId(item.npm || item.nim) === cleanNpm)
+              ? { ...item, avatar_url: finalUrl }
+              : item
+          );
+          localStorage.setItem('simak_leaderboard_cache', JSON.stringify(updatedLb));
+        }
+      } catch {}
+
+      // Broadcast update ke seluruh tab & komponen admin
+      try {
+        window.dispatchEvent(
+          new CustomEvent('simak_avatar_updated', {
+            detail: { userId: user.id, npm: cleanNpm, avatarUrl: finalUrl },
+          })
+        );
+      } catch {}
+
       setLeaderboard((prev) =>
         prev.map((item) =>
-          item.user_id === user.id ? { ...item, avatar_url: finalUrl } : item
+          item.user_id === user.id || (cleanNpm && normalizeStudentId(item.npm || item.nim) === cleanNpm)
+            ? { ...item, avatar_url: finalUrl }
+            : item
         )
       );
 
@@ -659,8 +697,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
     setIsUploadingAvatar(true);
     try {
+      const cleanNpm = normalizeStudentId(profile.npm || profile.nim || user.npm || user.nim || '');
       try {
         localStorage.removeItem('simak_avatar_' + user.id);
+        if (cleanNpm) localStorage.removeItem('simak_avatar_' + cleanNpm);
       } catch {}
 
       setProfile((prev) => ({
@@ -678,9 +718,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           .eq('user_id', user.id);
       }
 
+      try {
+        window.dispatchEvent(
+          new CustomEvent('simak_avatar_updated', {
+            detail: { userId: user.id, npm: cleanNpm, avatarUrl: null },
+          })
+        );
+      } catch {}
+
       setLeaderboard((prev) =>
         prev.map((item) =>
-          item.user_id === user.id ? { ...item, avatar_url: null } : item
+          item.user_id === user.id || (cleanNpm && normalizeStudentId(item.npm || item.nim) === cleanNpm)
+            ? { ...item, avatar_url: null }
+            : item
         )
       );
 
@@ -791,15 +841,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           return null;
         }
       })();
-      const effectiveAvatar = p?.avatar_url || cachedAvatar || null;
-      if (p?.avatar_url && p.avatar_url !== cachedAvatar) {
-        try {
-          localStorage.setItem('simak_avatar_' + user.id, p.avatar_url);
-        } catch {}
-      }
-
       const studentId = p?.npm || p?.nim || user.npm || user.nim || '-';
       const cleanId = normalizeStudentId(studentId);
+      const cachedAvatarByNpm = cleanId ? localStorage.getItem('simak_avatar_' + cleanId) : null;
+      const effectiveAvatar = p?.avatar_url || cachedAvatar || cachedAvatarByNpm || null;
+      if (effectiveAvatar) {
+        try {
+          if (!cachedAvatar) localStorage.setItem('simak_avatar_' + user.id, effectiveAvatar);
+          if (cleanId && !cachedAvatarByNpm) localStorage.setItem('simak_avatar_' + cleanId, effectiveAvatar);
+        } catch {}
+      }
       const ov = overrides[cleanId] || myOverride;
 
       const finalPhone = p?.phone || localExtra?.phone || null;
@@ -1316,6 +1367,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       }
     };
 
+    const handleAvatarUpdated = (e: any) => {
+      const detail = e?.detail;
+      if (!detail) return;
+      const cleanNpm = normalizeStudentId(detail.npm || '');
+      setLeaderboard((prev) =>
+        prev.map((item) =>
+          item.user_id === detail.userId || (cleanNpm && normalizeStudentId(item.npm || item.nim) === cleanNpm)
+            ? { ...item, avatar_url: detail.avatarUrl }
+            : item
+        )
+      );
+    };
+
     window.addEventListener('simak_member_sync', handleSync);
     window.addEventListener('simak_event_sync', handleEventSync);
     window.addEventListener('simak_event_lock_sync', handleLockSync);
@@ -1326,6 +1390,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     window.addEventListener('simak_attendance_sync', handleAttSubmittedOrSynced);
     window.addEventListener('simak_evaluations_sync', handleAttSubmittedOrSynced);
     window.addEventListener('simak_offline_synced', updateOfflineCount);
+    window.addEventListener('simak_avatar_updated', handleAvatarUpdated);
     window.addEventListener('online', updateOfflineCount);
     window.addEventListener('offline', updateOfflineCount);
 
@@ -1358,6 +1423,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       window.removeEventListener('simak_attendance_sync', handleAttSubmittedOrSynced);
       window.removeEventListener('simak_evaluations_sync', handleAttSubmittedOrSynced);
       window.removeEventListener('simak_offline_synced', updateOfflineCount);
+      window.removeEventListener('simak_avatar_updated', handleAvatarUpdated);
       window.removeEventListener('online', updateOfflineCount);
       window.removeEventListener('offline', updateOfflineCount);
     };
@@ -3158,13 +3224,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                 +{topThree[1]?.total_points} P
                               </span>
                             </div>
-                            <div>
-                              <h5 className="font-extrabold text-xs text-slate-900 line-clamp-1">
-                                {topThree[1]?.full_name}
-                              </h5>
-                              <p className="text-[10px] text-slate-400 line-clamp-1">
-                                {topThree[1]?.division}
-                              </p>
+                            <div className="flex items-center gap-2.5">
+                              {topThree[1]?.avatar_url ? (
+                                <img
+                                  src={topThree[1].avatar_url}
+                                  alt={topThree[1].full_name}
+                                  className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 shadow-xs"
+                                  crossOrigin="anonymous"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
+                                  {topThree[1]?.full_name?.charAt(0)}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <h5 className="font-extrabold text-xs text-slate-900 line-clamp-1">
+                                  {topThree[1]?.full_name}
+                                </h5>
+                                <p className="text-[10px] text-slate-400 line-clamp-1">
+                                  {topThree[1]?.division}
+                                </p>
+                              </div>
                             </div>
                           </div>
 
@@ -3179,18 +3259,32 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                 +{topThree[0]?.total_points} P
                               </span>
                             </div>
-                            <div>
-                              <h5 className="font-black text-sm text-slate-950 line-clamp-1">
-                                {topThree[0]?.full_name}
-                              </h5>
-                              <p className="text-[10px] font-semibold text-slate-600 line-clamp-1">
-                                {topThree[0]?.division}
-                              </p>
-                              {topThree[0]?.attendance_percentage === 100 && (
-                                <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">
-                                  ✓ 100% Kehadiran Proker
-                                </span>
+                            <div className="flex items-center gap-3">
+                              {topThree[0]?.avatar_url ? (
+                                <img
+                                  src={topThree[0].avatar_url}
+                                  alt={topThree[0].full_name}
+                                  className="w-12 h-12 rounded-full object-cover shrink-0 border-2 border-amber-300 shadow-sm"
+                                  crossOrigin="anonymous"
+                                />
+                              ) : (
+                                <div className="w-12 h-12 rounded-full bg-amber-300 text-amber-950 font-black text-sm flex items-center justify-center shrink-0 border-2 border-amber-400 shadow-sm">
+                                  {topThree[0]?.full_name?.charAt(0)}
+                                </div>
                               )}
+                              <div className="min-w-0">
+                                <h5 className="font-black text-sm text-slate-900 line-clamp-1">
+                                  {topThree[0]?.full_name}
+                                </h5>
+                                <p className="text-[10px] font-semibold text-slate-600 line-clamp-1">
+                                  {topThree[0]?.division}
+                                </p>
+                                {topThree[0]?.attendance_percentage === 100 && (
+                                  <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">
+                                    ✓ 100% Kehadiran Proker
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
 
@@ -3204,13 +3298,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                 +{topThree[2]?.total_points} P
                               </span>
                             </div>
-                            <div>
-                              <h5 className="font-extrabold text-xs text-slate-900 line-clamp-1">
-                                {topThree[2]?.full_name}
-                              </h5>
-                              <p className="text-[10px] text-slate-400 line-clamp-1">
-                                {topThree[2]?.division}
-                              </p>
+                            <div className="flex items-center gap-2.5">
+                              {topThree[2]?.avatar_url ? (
+                                <img
+                                  src={topThree[2].avatar_url}
+                                  alt={topThree[2].full_name}
+                                  className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 shadow-xs"
+                                  crossOrigin="anonymous"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
+                                  {topThree[2]?.full_name?.charAt(0)}
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <h5 className="font-extrabold text-xs text-slate-900 line-clamp-1">
+                                  {topThree[2]?.full_name}
+                                </h5>
+                                <p className="text-[10px] text-slate-400 line-clamp-1">
+                                  {topThree[2]?.division}
+                                </p>
+                              </div>
                             </div>
                           </div>
                         </div>
