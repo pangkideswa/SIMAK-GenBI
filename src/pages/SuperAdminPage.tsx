@@ -546,7 +546,13 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased selection:bg-purple-600 selection:text-white">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased selection:bg-blue-600 selection:text-white relative">
+      {/* Background Ambient Glow (Navy Blue & Gold) */}
+      <div className="fixed inset-0 pointer-events-none -z-10">
+        <div className="absolute top-0 right-1/4 w-[500px] h-[500px] rounded-full bg-blue-600/10 blur-[120px]" />
+        <div className="absolute bottom-1/3 left-10 w-[400px] h-[400px] rounded-full bg-amber-500/5 blur-[120px]" />
+      </div>
+
       {/* Floating Toast Notification (Hijau = Sukses, Merah = Gagal/Error, Kuning = Info/Peringatan) */}
       {toast && (
         <div
@@ -569,10 +575,10 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         </div>
       )}
       {/* HEADER UTAMA SUPER ADMIN */}
-      <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-purple-900/40 px-4 sm:px-6 lg:px-8 py-3.5 shadow-xl shadow-purple-950/20">
+      <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-blue-900/40 px-4 sm:px-6 lg:px-8 py-3.5 shadow-xl shadow-blue-950/30">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white p-1.5 shadow-md border border-purple-500/30 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-2xl bg-white p-1.5 shadow-md border border-blue-500/30 flex items-center justify-center">
               <img
                 src="/logo-genbi.png"
                 alt="Logo GenBI UNMA"
@@ -583,9 +589,11 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
               <div className="flex items-center gap-2">
                 <h1 className="text-sm sm:text-base font-black tracking-tight text-white flex items-center gap-1.5">
                   <span>SIMAK GENBI</span>
-                  <span className="text-purple-400 font-extrabold">• SUPER ADMIN</span>
+                  <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 bg-clip-text text-transparent font-black tracking-wider flex items-center gap-1">
+                    • SUPER ADMIN <Crown className="w-3.5 h-3.5 text-amber-400 inline" />
+                  </span>
                 </h1>
-                <span className="px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-[10px] font-black uppercase tracking-wider">
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[10px] font-black uppercase tracking-wider">
                   ROOT SYSTEM
                 </span>
               </div>
@@ -596,9 +604,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/40 border border-purple-800/40 text-xs">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-950/50 border border-blue-800/40 text-xs">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[11px] font-mono text-purple-200">Supabase: Online</span>
+              <span className="text-[11px] font-mono text-blue-200">Supabase: Online</span>
             </div>
 
             <button
@@ -612,18 +620,18 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         </div>
       </header>
 
-      {/* NAVIGASI 4 TAB UTAMA SUPER ADMIN */}
-      <div className="bg-slate-900/60 border-b border-slate-800 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto flex items-center gap-1 overflow-x-auto py-2 no-scrollbar">
+      {/* NAVIGASI 6 TAB UTAMA SUPER ADMIN */}
+      <div className="bg-slate-900/80 border-b border-slate-800 px-4 sm:px-6 lg:px-8 sticky top-[65px] z-30 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto flex items-center gap-1.5 overflow-x-auto py-2.5 no-scrollbar">
           <button
             onClick={() => setActiveTab('users')}
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'users'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <Users className="w-4 h-4 text-purple-300" />
+            <Users className={`w-4 h-4 ${activeTab === 'users' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Manajemen Pengguna & Hak Akses ({members.length})</span>
           </button>
 
@@ -631,11 +639,11 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             onClick={() => setActiveTab('periods')}
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'periods'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <CalendarDays className="w-4 h-4 text-purple-300" />
+            <CalendarDays className={`w-4 h-4 ${activeTab === 'periods' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Periode Kepengurusan ({periods.length})</span>
           </button>
 
@@ -643,11 +651,11 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             onClick={() => setActiveTab('bph-panel')}
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'bph-panel'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <Calendar className="w-4 h-4 text-purple-300" />
+            <Calendar className={`w-4 h-4 ${activeTab === 'bph-panel' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Panel Operasional BPH</span>
           </button>
 
@@ -655,11 +663,11 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             onClick={() => setActiveTab('simulator')}
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'simulator'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <Laptop className="w-4 h-4 text-purple-300" />
+            <Laptop className={`w-4 h-4 ${activeTab === 'simulator' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Simulator Tampilan (Kadiv / Anggota)</span>
           </button>
 
@@ -667,11 +675,11 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             onClick={() => setActiveTab('system')}
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'system'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <Database className="w-4 h-4 text-purple-300" />
+            <Database className={`w-4 h-4 ${activeTab === 'system' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Kesehatan Sistem & Database</span>
           </button>
 
@@ -679,11 +687,11 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             onClick={() => setActiveTab('audit')}
             className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeTab === 'audit'
-                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <ShieldAlert className="w-4 h-4 text-purple-300" />
+            <ShieldAlert className={`w-4 h-4 ${activeTab === 'audit' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Audit Trail & Log ({auditLogs.length})</span>
           </button>
         </div>
@@ -695,9 +703,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         {activeTab === 'users' && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Header Card & Penjelasan */}
-            <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-purple-950/60 via-slate-900 to-slate-900 border border-purple-500/20 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-blue-950/70 via-slate-900 to-slate-900 border border-blue-500/30 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-[11px] font-bold uppercase mb-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[11px] font-bold uppercase mb-2">
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
                   <span>Master Akses Pengguna</span>
                 </div>
@@ -713,14 +721,14 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 <button
                   onClick={loadAllUsers}
                   disabled={isLoading}
-                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-purple-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700 cursor-pointer disabled:opacity-50"
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-blue-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700 cursor-pointer disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
                   <span>Muat Ulang</span>
                 </button>
                 <button
                   onClick={handleClearAndResync}
-                  className="px-3.5 py-2 bg-purple-950/60 hover:bg-purple-900 border border-purple-700/50 text-purple-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                  className="px-3.5 py-2 bg-blue-950/60 hover:bg-blue-900 border border-blue-700/50 text-blue-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <Sliders className="w-3.5 h-3.5 text-amber-400" />
                   <span>Sinkronkan Ulang</span>
@@ -737,7 +745,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Cari berdasarkan nama, NPM, atau email..."
-                  className="w-full pl-10 pr-4 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                  className="w-full pl-10 pr-4 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 />
               </div>
 
@@ -787,7 +795,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                     {filteredMembers.map((m) => {
                       const isMe = m.npm === '2414101078';
                       return (
-                        <tr key={m.npm} className="hover:bg-purple-950/20 transition">
+                        <tr key={m.npm} className="hover:bg-blue-950/30 transition">
                           <td className="py-3 px-4 font-mono font-bold text-slate-300">
                             <span className="px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-800">
                               {m.npm}
@@ -796,16 +804,17 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                           <td className="py-3 px-4 font-bold text-white flex items-center gap-2">
                             <span>{m.fullName}</span>
                             {isMe && (
-                              <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-400/30 text-[9px] font-black uppercase">
-                                Akun Pribadi
+                              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[9px] font-black uppercase flex items-center gap-1">
+                                <Crown className="w-2.5 h-2.5 text-amber-400" />
+                                <span>Akun Pribadi</span>
                               </span>
                             )}
                           </td>
                           <td className="py-3 px-4 text-slate-300">{m.division}</td>
                           <td className="py-3 px-4 text-center">
                             {m.role === 'admin' ? (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-black">
-                                <Shield className="w-3 h-3 text-purple-400" />
+                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-black">
+                                <Shield className="w-3 h-3 text-blue-400" />
                                 <span>BPH</span>
                               </span>
                             ) : m.role === 'kadiv' ? (
@@ -835,9 +844,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                           <td className="py-3 px-4 text-center">
                             <button
                               onClick={() => handleOpenEdit(m)}
-                              className="px-3 py-1.5 rounded-xl bg-purple-900/50 hover:bg-purple-800 text-purple-200 text-xs font-bold transition flex items-center gap-1 mx-auto border border-purple-700/50 cursor-pointer shadow-xs active:scale-95"
+                              className="px-3 py-1.5 rounded-xl bg-blue-950/60 hover:bg-blue-900 text-blue-200 text-xs font-bold transition flex items-center gap-1 mx-auto border border-blue-700/50 cursor-pointer shadow-xs active:scale-95"
                             >
-                              <Pencil className="w-3 h-3" />
+                              <Pencil className="w-3 h-3 text-blue-300" />
                               <span>Ubah Hak Akses</span>
                             </button>
                           </td>
@@ -851,14 +860,14 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
           </div>
         )}
 
-        {/* TAB BARU: MANAJEMEN PERIODE KEPENGURUSAN (CRUD SUPER ADMIN) */}
+        {/* TAB 2: MANAJEMEN PERIODE KEPENGURUSAN (CRUD SUPER ADMIN) */}
         {activeTab === 'periods' && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Header Banner */}
-            <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-purple-950/60 via-slate-900 to-slate-900 border border-purple-500/20 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-blue-950/70 via-slate-900 to-slate-900 border border-blue-500/30 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-[11px] font-bold uppercase mb-2">
-                  <CalendarDays className="w-3.5 h-3.5 text-purple-400" />
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[11px] font-bold uppercase mb-2">
+                  <CalendarDays className="w-3.5 h-3.5 text-blue-400" />
                   <span>Siklus Periode & Multi-Tahun</span>
                 </div>
                 <h2 className="text-lg sm:text-xl font-black text-white">
@@ -871,7 +880,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
 
               <button
                 onClick={handleOpenAddPeriod}
-                className="self-start sm:self-center px-4 py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-lg shadow-purple-600/30 active:scale-95"
+                className="self-start sm:self-center px-4 py-2.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-black transition flex items-center gap-2 cursor-pointer shadow-lg shadow-blue-600/30 active:scale-95"
               >
                 <Plus className="w-4 h-4" />
                 <span>Tambah Periode Baru</span>
@@ -894,7 +903,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   <tbody className="divide-y divide-slate-800/60 font-medium">
                     {periods.map((p) => {
                       return (
-                        <tr key={p.id} className="hover:bg-purple-950/20 transition">
+                        <tr key={p.id} className="hover:bg-blue-950/30 transition">
                           <td className="py-3.5 px-4 font-bold text-white flex items-center gap-2">
                             <span>{p.name}</span>
                             {p.isActive && (
@@ -903,7 +912,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                               </span>
                             )}
                           </td>
-                          <td className="py-3.5 px-4 font-mono font-bold text-purple-300">
+                          <td className="py-3.5 px-4 font-mono font-bold text-blue-300">
                             {p.academicYear}
                           </td>
                           <td className="py-3.5 px-4 text-slate-300 font-semibold">
@@ -936,7 +945,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
 
                               <button
                                 onClick={() => handleOpenEditPeriod(p)}
-                                className="px-2.5 py-1.5 rounded-xl bg-purple-950/60 hover:bg-purple-900 border border-purple-700/50 text-purple-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                                className="px-2.5 py-1.5 rounded-xl bg-blue-950/60 hover:bg-blue-900 border border-blue-700/50 text-blue-200 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
                                 title="Edit nama atau rincian periode"
                               >
                                 <Pencil className="w-3.5 h-3.5" />
@@ -987,10 +996,11 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         {/* TAB 3: SIMULATOR MULTI-ROLE (KADIV / ANGGOTA VIEW) */}
         {activeTab === 'simulator' && (
           <div className="space-y-4 animate-in fade-in duration-200">
-            <div className="p-4 rounded-3xl bg-slate-900 border border-purple-500/30 flex flex-wrap items-center justify-between gap-3">
+            <div className="p-4 rounded-3xl bg-slate-900 border border-blue-500/30 flex flex-wrap items-center justify-between gap-3 shadow-lg">
               <div>
-                <span className="text-xs font-black uppercase text-purple-400 block tracking-wider">
-                  🧪 Simulator Tampilan Pengembang
+                <span className="text-xs font-black uppercase text-amber-400 block tracking-wider flex items-center gap-1.5">
+                  <Laptop className="w-3.5 h-3.5 text-blue-400" />
+                  <span>🧪 Simulator Tampilan Pengembang</span>
                 </span>
                 <p className="text-xs text-slate-400">
                   Uji antarmuka pengguna seolah-olah Anda login sebagai Kepala Divisi atau Anggota biasa.
@@ -1001,30 +1011,32 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
                   <button
                     onClick={() => setSimulatedRole('kadiv')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer flex items-center gap-1 ${
                       simulatedRole === 'kadiv'
-                        ? 'bg-amber-500 text-slate-950 font-black'
+                        ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-black shadow-xs'
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    Kepala Divisi
+                    <Crown className="w-3.5 h-3.5" />
+                    <span>Kepala Divisi</span>
                   </button>
                   <button
                     onClick={() => setSimulatedRole('member')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer flex items-center gap-1 ${
                       simulatedRole === 'member'
-                        ? 'bg-blue-600 text-white font-black'
+                        ? 'bg-blue-600 text-white font-black shadow-xs'
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    Anggota Biasa
+                    <User className="w-3.5 h-3.5" />
+                    <span>Anggota Biasa</span>
                   </button>
                 </div>
 
                 <select
                   value={simulatedDivision}
                   onChange={(e) => setSimulatedDivision(e.target.value as Division)}
-                  className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-purple-300 focus:outline-none cursor-pointer"
+                  className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
                 >
                   <option value="Publikasi dan Sosialisasi">Divisi Publikasi & Sosialisasi</option>
                   <option value="Lingkungan Hidup">Divisi Lingkungan Hidup</option>
@@ -1062,10 +1074,10 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
               <div className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-400">Storage Bukti & Foto</span>
-                  <CloudUpload className="w-4 h-4 text-purple-400" />
+                  <CloudUpload className="w-4 h-4 text-blue-400" />
                 </div>
                 <h3 className="text-base font-black text-white">Google Drive Engine</h3>
-                <p className="text-xs text-purple-300 font-bold">✓ Apps Script Auto-Compress</p>
+                <p className="text-xs text-blue-300 font-bold">✓ Apps Script Auto-Compress</p>
                 <p className="text-[11px] text-slate-500">Kamera terkompresi otomatis ~200KB</p>
               </div>
 
@@ -1080,7 +1092,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
               </div>
             </div>
 
-            <div className="p-6 rounded-3xl bg-slate-900 border border-purple-500/20 space-y-4">
+            <div className="p-6 rounded-3xl bg-slate-900 border border-blue-500/25 space-y-4 shadow-xl">
               <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-400" />
                 <span>Pembersihan Cache & Reset Sinkronisasi</span>
@@ -1090,18 +1102,18 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
               </p>
               <button
                 onClick={handleClearAndResync}
-                className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-lg shadow-purple-600/30 transition cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition cursor-pointer active:scale-95"
               >
                 Reset Cache & Sinkronkan Sekarang
               </button>
             </div>
 
             {/* Panel Backup & Restore Database 1-Klik */}
-            <div className="p-6 rounded-3xl bg-slate-900 border border-purple-500/20 space-y-4">
+            <div className="p-6 rounded-3xl bg-slate-900 border border-blue-500/25 space-y-4 shadow-xl">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-                    <Database className="w-4 h-4 text-purple-400" />
+                    <Database className="w-4 h-4 text-blue-400" />
                     <span>Cadangan & Pemulihan Basis Data (Backup & Restore)</span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
@@ -1112,14 +1124,14 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 <div className="flex items-center gap-2.5">
                   <button
                     onClick={handleDownloadBackup}
-                    className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-600/25 flex items-center gap-1.5 transition cursor-pointer"
+                    className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/25 flex items-center gap-1.5 transition cursor-pointer active:scale-95"
                   >
-                    <Download className="w-4 h-4" />
+                    <Download className="w-4 h-4 text-amber-300" />
                     <span>Download Backup (.JSON)</span>
                   </button>
 
-                  <label className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-purple-200 border border-purple-700/40 text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer">
-                    <Upload className="w-4 h-4 text-purple-400" />
+                  <label className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-blue-200 border border-blue-700/40 text-xs font-bold rounded-xl flex items-center gap-1.5 transition cursor-pointer active:scale-95 shadow-xs">
+                    <Upload className="w-4 h-4 text-blue-400" />
                     <span>Restore Data (.JSON)</span>
                     <input
                       type="file"
@@ -1138,10 +1150,10 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         {activeTab === 'audit' && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Header Banner */}
-            <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-purple-950/70 via-slate-900 to-slate-900 border border-purple-500/20 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-blue-950/70 via-slate-900 to-slate-900 border border-blue-500/30 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 text-[11px] font-bold uppercase mb-2">
-                  <ShieldAlert className="w-3.5 h-3.5 text-purple-400" />
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[11px] font-bold uppercase mb-2">
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
                   <span>Sistem Kepatuhan & Audit Trail</span>
                 </div>
                 <h2 className="text-lg sm:text-xl font-black text-white">
@@ -1163,9 +1175,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                     dl.click();
                     document.body.removeChild(dl);
                   }}
-                  className="px-3.5 py-2 rounded-xl bg-purple-950/60 hover:bg-purple-900 border border-purple-700/50 text-purple-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                  className="px-3.5 py-2 rounded-xl bg-blue-950/60 hover:bg-blue-900 border border-blue-700/50 text-blue-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
                 >
-                  <Download className="w-3.5 h-3.5 text-purple-300" />
+                  <Download className="w-3.5 h-3.5 text-blue-300" />
                   <span>Unduh Log (.JSON)</span>
                 </button>
 
@@ -1177,7 +1189,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                       showToast('Log audit berhasil dibersihkan.', 'info');
                     }
                   }}
-                  className="px-3.5 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-800/50 text-rose-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  className="px-3.5 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-800/50 text-rose-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Bersihkan</span>
@@ -1194,7 +1206,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   placeholder="Cari aktor, aksi, atau target..."
                   value={auditSearch}
                   onChange={(e) => setAuditSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                  className="w-full pl-9 pr-4 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 />
               </div>
 
@@ -1202,7 +1214,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 <select
                   value={auditFilterType}
                   onChange={(e) => setAuditFilterType(e.target.value)}
-                  className="w-full sm:w-auto px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-slate-300 font-medium focus:outline-none focus:ring-2 focus:ring-purple-500/40 cursor-pointer"
+                  className="w-full sm:w-auto px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-slate-300 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
                 >
                   <option value="all">Semua Jenis Aktivitas ({auditLogs.length})</option>
                   <option value="ROLE_CHANGE">Perubahan Hak Akses / Jabatan</option>
@@ -1261,9 +1273,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                         const isPin = log.actionType === 'AUTH_PIN_CHANGE';
 
                         const badgeColor = isRole
-                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
-                          : isPeriod
                           ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                          : isPeriod
+                          ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
                           : isDelegasi
                           ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                           : isPin
@@ -1271,7 +1283,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                           : 'bg-slate-800 text-slate-300 border-slate-700';
 
                         return (
-                          <tr key={log.id} className="hover:bg-purple-950/20 transition">
+                          <tr key={log.id} className="hover:bg-blue-950/30 transition">
                             <td className="py-3 px-4 font-mono text-slate-300 whitespace-nowrap">
                               <span className="block font-bold text-white">{timeFormatted}</span>
                               <span className="text-[10px] text-slate-500">{dateFormatted}</span>
@@ -1279,7 +1291,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
 
                             <td className="py-3 px-4">
                               <span className="font-bold text-white block">{log.actorName}</span>
-                              <span className="text-[10px] text-purple-300">{log.actorRole}</span>
+                              <span className="text-[10px] text-blue-300">{log.actorRole}</span>
                             </td>
 
                             <td className="py-3 px-4 text-center">
@@ -1307,15 +1319,15 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
       </main>
 
       {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
-      <Footer className="border-t-purple-900/40 bg-slate-900/90 text-slate-300" />
+      <Footer className="border-t-blue-900/40 bg-slate-900/90 text-slate-300" />
 
       {/* MODAL CRUD PERIODE KEPENGURUSAN */}
       {showPeriodModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-purple-500/30 p-6 shadow-2xl space-y-4 relative">
+          <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-blue-500/30 p-6 shadow-2xl space-y-4 relative">
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-purple-500/20 text-purple-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-purple-400/30">
-                <CalendarDays className="w-3 h-3" />
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-blue-400/30">
+                <CalendarDays className="w-3 h-3 text-blue-400" />
                 <span>{editingPeriod ? 'Edit Periode' : 'Tambah Periode Baru'}</span>
               </div>
               <h3 className="text-base font-black text-white">
@@ -1337,7 +1349,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   placeholder="T.A. 2026/2027 Ganjil"
                   value={periodName}
                   onChange={(e) => setPeriodName(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                  className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 />
               </div>
 
@@ -1350,7 +1362,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                     placeholder="2026/2027"
                     value={periodYear}
                     onChange={(e) => setPeriodYear(e.target.value)}
-                    className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-purple-300 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                    className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-blue-300 font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                   />
                 </div>
 
@@ -1359,7 +1371,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   <select
                     value={periodSemester}
                     onChange={(e) => setPeriodSemester(e.target.value as 'Ganjil' | 'Genap')}
-                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-purple-500/40 cursor-pointer"
+                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
                   >
                     <option value="Ganjil">Semester Ganjil</option>
                     <option value="Genap">Semester Genap</option>
@@ -1376,7 +1388,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   placeholder="Contoh: Masa yang akan datang / Periode Aktif / Persiapan"
                   value={periodStatusLabel}
                   onChange={(e) => setPeriodStatusLabel(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                  className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 />
                 <p className="text-[10px] text-slate-500">
                   Label kustom yang tampil di tabel (misal: "Masa yang akan datang", bukan kaku Arsip Demisioner).
@@ -1389,14 +1401,14 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   id="periodIsActiveCheck"
                   checked={periodIsActive}
                   onChange={(e) => setPeriodIsActive(e.target.checked)}
-                  className="w-4 h-4 rounded text-purple-600 bg-slate-950 border-slate-700 focus:ring-purple-500 cursor-pointer"
+                  className="w-4 h-4 rounded text-blue-600 bg-slate-950 border-slate-700 focus:ring-blue-500 cursor-pointer"
                 />
-                <label htmlFor="periodIsActiveCheck" className="text-xs font-bold text-purple-200 cursor-pointer">
+                <label htmlFor="periodIsActiveCheck" className="text-xs font-bold text-blue-200 cursor-pointer">
                   Jadikan Sebagai Periode Kepengurusan Aktif
                 </label>
               </div>
 
-              <div className="p-3 rounded-2xl bg-purple-950/30 border border-purple-800/30 text-[11px] text-purple-300">
+              <div className="p-3 rounded-2xl bg-blue-950/40 border border-blue-800/40 text-[11px] text-blue-200">
                 💡 <strong>Sinkronisasi Realtime:</strong> Jika periode ini diset aktif, dropdown periode di Admin BPH dan profil seluruh anggota akan otomatis berpindah ke periode ini seketika.
               </div>
 
@@ -1411,7 +1423,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 <button
                   type="submit"
                   disabled={isSavingPeriod}
-                  className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-600/30 transition cursor-pointer disabled:opacity-50"
+                  className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition cursor-pointer disabled:opacity-50"
                 >
                   {isSavingPeriod ? 'Menyimpan...' : 'Simpan Periode'}
                 </button>
@@ -1424,17 +1436,17 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
       {/* MODAL UBAH HAK AKSES / ROLE USER */}
       {editingMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-purple-500/30 p-6 shadow-2xl space-y-4 relative">
+          <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-blue-500/30 p-6 shadow-2xl space-y-4 relative">
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-purple-500/20 text-purple-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-purple-400/30">
-                <Pencil className="w-3 h-3" />
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-blue-400/30">
+                <Pencil className="w-3 h-3 text-blue-400" />
                 <span>Super Admin Hak Akses</span>
               </div>
               <h3 className="text-base font-black text-white">
                 Perbarui Hak Akses Akun
               </h3>
               <p className="text-xs text-slate-400">
-                NPM: <span className="font-mono font-bold text-purple-300">{editingMember.npm}</span>
+                NPM: <span className="font-mono font-bold text-blue-300">{editingMember.npm}</span>
               </p>
             </div>
 
@@ -1448,7 +1460,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   required
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                  className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 />
               </div>
 
@@ -1458,7 +1470,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   <select
                     value={editDivision}
                     onChange={(e) => setEditDivision(e.target.value as Division)}
-                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-purple-500/40 cursor-pointer"
+                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
                   >
                     <option value="Publikasi dan Sosialisasi">Publikasi & Sosialisasi</option>
                     <option value="Lingkungan Hidup">Lingkungan Hidup</option>
@@ -1474,7 +1486,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   <select
                     value={editRole}
                     onChange={(e) => setEditRole(e.target.value as Role)}
-                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-purple-200 font-bold focus:outline-none focus:ring-2 focus:ring-purple-500/40 cursor-pointer"
+                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-blue-200 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
                   >
                     <option value="member">👤 Anggota</option>
                     <option value="kadiv">⭐ Kepala Divisi (Kadiv)</option>
@@ -1483,7 +1495,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 </div>
               </div>
 
-              <div className="p-3 rounded-2xl bg-purple-950/30 border border-purple-800/30 text-[11px] text-purple-300">
+              <div className="p-3 rounded-2xl bg-blue-950/40 border border-blue-800/40 text-[11px] text-blue-200">
                 💡 <strong>Catatan:</strong> Jika akun ini diubah dari BPH ke Anggota, akun akan langsung turun pangkat menjadi Anggota biasa di tabel whitelist, rekap keaktifan, dan profil secara otomatis.
               </div>
 
@@ -1498,7 +1510,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 <button
                   type="submit"
                   disabled={isSavingEdit}
-                  className="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-purple-600/30 transition cursor-pointer disabled:opacity-50"
+                  className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition cursor-pointer disabled:opacity-50"
                 >
                   {isSavingEdit ? 'Menyimpan...' : 'Simpan & Sinkronkan'}
                 </button>
