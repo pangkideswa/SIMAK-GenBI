@@ -6,6 +6,7 @@ import { SuperAdminPage } from './pages/SuperAdminPage';
 import { DocumentVerificationView } from './components/DocumentVerificationView';
 import { SatelliteLoader } from './components/SatelliteLoader';
 import { supabase } from './lib/supabase';
+import { purgeSuperAdminFromCache } from './lib/attendanceSync';
 
 interface UserSession {
   id: string;
@@ -41,6 +42,7 @@ export function App() {
 
   // Cek dan sinkronkan sesi autentikasi Supabase saat aplikasi dibuka
   useEffect(() => {
+    purgeSuperAdminFromCache();
     const checkSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();

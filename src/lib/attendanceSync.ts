@@ -6,6 +6,91 @@ export const ALL_ATTENDANCES_KEY = 'simak_all_attendances';
 export const EVALUATIONS_OVERRIDES_KEY = 'simak_evaluations_overrides';
 export const LEADERBOARD_CACHE_KEY = 'simak_leaderboard_cache';
 
+/**
+ * Cek apakah sebuah entitas profil / evaluasi merupakan akun Super Admin (Root System)
+ * Super Admin bukan anggota kepengurusan dan tidak boleh masuk ke leaderboard / rekap keaktifan
+ */
+export function isSuperAdminAccount(userOrItem: any): boolean {
+  if (!userOrItem) return false;
+  const role = String(userOrItem.role || '').toLowerCase();
+  const npm = String(userOrItem.npm || userOrItem.nim || userOrItem.userNpm || '').toLowerCase().trim();
+  const fullName = String(userOrItem.full_name || userOrItem.fullName || userOrItem.userFullName || userOrItem.name || '').toLowerCase();
+  const email = String(userOrItem.email || '').toLowerCase();
+  const userId = String(userOrItem.user_id || userOrItem.userId || userOrItem.id || '');
+
+  return (
+    role === 'superadmin' ||
+    npm === 'superadmin' ||
+    fullName.includes('(super admin)') ||
+    fullName.includes('super admin') ||
+    email.startsWith('superadmin') ||
+    userId === '00000000-0000-0000-0000-000000000000' ||
+    userId === '00000000-0000-0000-0000-000000000001'
+  );
+}
+
+/**
+ * Bersihkan seluruh residu akun Super Admin dari cache leaderboard & evaluasi lokal
+ */
+export function purgeSuperAdminFromCache(): void {
+  try {
+    // 1. Bersihkan EVALUATIONS_OVERRIDES_KEY
+    const rawOv = localStorage.getItem(EVALUATIONS_OVERRIDES_KEY);
+    if (rawOv) {
+      const ov = JSON.parse(rawOv);
+      let changed = false;
+      for (const [key, val] of Object.entries(ov)) {
+        if (
+          isSuperAdminAccount(val) ||
+          key.toLowerCase() === 'superadmin' ||
+          key.startsWith('00000000-0000')
+        ) {
+          delete ov[key];
+          changed = true;
+        }
+      }
+      if (changed) {
+        localStorage.setItem(EVALUATIONS_OVERRIDES_KEY, JSON.stringify(ov));
+      }
+    }
+
+    // 2. Bersihkan LEADERBOARD_CACHE_KEY
+    const rawLb = localStorage.getItem(LEADERBOARD_CACHE_KEY);
+    if (rawLb) {
+      const lb = JSON.parse(rawLb);
+      if (Array.isArray(lb)) {
+        const filtered = lb.filter((item: any) => !isSuperAdminAccount(item));
+        localStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify(filtered));
+      }
+    }
+
+    // 3. Bersihkan ALL_ATTENDANCES_KEY
+    const rawAtt = localStorage.getItem(ALL_ATTENDANCES_KEY);
+    if (rawAtt) {
+      const atts = JSON.parse(rawAtt);
+      if (Array.isArray(atts)) {
+        const filtered = atts.filter((item: any) => !isSuperAdminAccount(item));
+        localStorage.setItem(ALL_ATTENDANCES_KEY, JSON.stringify(filtered));
+      }
+    }
+
+    // 4. Hapus key-key personal SUPERADMIN jika tersisa
+    const keysToRemove = [
+      'simak_attendances_SUPERADMIN',
+      'simak_attendances_superadmin',
+      'simak_attendances_00000000-0000-0000-0000-000000000000',
+      'simak_attendances_00000000-0000-0000-0000-000000000001',
+      'simak_eval_SUPERADMIN',
+      'simak_eval_superadmin',
+      'simak_eval_00000000-0000-0000-0000-000000000000',
+      'simak_eval_00000000-0000-0000-0000-000000000001',
+    ];
+    for (const k of keysToRemove) {
+      localStorage.removeItem(k);
+    }
+  } catch {}
+}
+
 export interface UnifiedAttendanceInput {
   eventId: string;
   userId: string;
@@ -82,6 +167,11 @@ export async function recordUnifiedAttendance(
     user_lat: input.userLat || null,
     user_lng: input.userLng || null,
   };
+
+  // Super Admin (Root System) bukan anggota kepengurusan dan tidak dicatat ke leaderboard / evaluasi anggota
+  if (isSuperAdminAccount(input)) {
+    return attRecord;
+  }
 
   // 1. Simpan ke simak_all_attendances (Shared Global Cache)
   try {
@@ -262,35 +352,42 @@ export async function recordUnifiedAttendance(
 /**
  * Gabungkan data evaluasi dari Supabase dengan Overrides Lokal
  * Menjamin poin yang bertambah tidak pernah hilang saat refresh / re-fetch
+ * Selalu mengesampingkan dan memfilter akun Super Admin agar tidak masuk ke leaderboard / rekap
  */
 export function applyEvaluationsOverrides(
   baseList: MemberEvaluation[]
 ): MemberEvaluation[] {
+  // Bersihkan residu akun superadmin dari cache
+  purgeSuperAdminFromCache();
+
   let overrides: Record<string, any> = {};
   try {
     const rawOv = localStorage.getItem(EVALUATIONS_OVERRIDES_KEY);
     if (rawOv) overrides = JSON.parse(rawOv);
   } catch {}
 
-  const merged = baseList.map((item) => {
-    const cleanId = normalizeStudentId(item.npm || item.nim);
-    const ov = overrides[cleanId] || overrides[item.user_id];
-    if (ov) {
-      return {
-        ...item,
-        total_points: ov.total_points ?? item.total_points,
-        total_hadir: ov.total_hadir ?? item.total_hadir,
-        total_izin: ov.total_izin ?? item.total_izin,
-        total_alfa: ov.total_alfa ?? item.total_alfa,
-        attendance_percentage: ov.attendance_percentage ?? item.attendance_percentage,
-        predicate: ov.predicate ?? item.predicate,
-      };
-    }
-    return item;
-  });
+  const merged = baseList
+    .filter((item) => !isSuperAdminAccount(item))
+    .map((item) => {
+      const cleanId = normalizeStudentId(item.npm || item.nim);
+      const ov = overrides[cleanId] || overrides[item.user_id];
+      if (ov) {
+        return {
+          ...item,
+          total_points: ov.total_points ?? item.total_points,
+          total_hadir: ov.total_hadir ?? item.total_hadir,
+          total_izin: ov.total_izin ?? item.total_izin,
+          total_alfa: ov.total_alfa ?? item.total_alfa,
+          attendance_percentage: ov.attendance_percentage ?? item.attendance_percentage,
+          predicate: ov.predicate ?? item.predicate,
+        };
+      }
+      return item;
+    });
 
-  // Tambahkan juga jika ada user override yang belum ada di baseList
+  // Tambahkan juga jika ada user override yang belum ada di baseList (kecuali Super Admin)
   for (const [key, ovItem] of Object.entries(overrides)) {
+    if (isSuperAdminAccount(ovItem)) continue;
     const cleanKey = normalizeStudentId(key);
     if (
       !merged.some(
@@ -303,7 +400,9 @@ export function applyEvaluationsOverrides(
     }
   }
 
-  return merged.sort((a, b) => (b.total_points || 0) - (a.total_points || 0));
+  return merged
+    .filter((m) => !isSuperAdminAccount(m))
+    .sort((a, b) => (b.total_points || 0) - (a.total_points || 0));
 }
 
 /**

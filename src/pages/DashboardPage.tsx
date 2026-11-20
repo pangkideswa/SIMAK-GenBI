@@ -64,6 +64,8 @@ import {
   recordUnifiedAttendance,
   applyEvaluationsOverrides,
   EVALUATIONS_OVERRIDES_KEY,
+  isSuperAdminAccount,
+  purgeSuperAdminFromCache,
 } from '../lib/attendanceSync';
 import { MemberReportModal } from '../components/MemberReportModal';
 import {
@@ -363,10 +365,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
   const [leaderboard, setLeaderboard] = useState<MemberEvaluation[]>(() => {
     try {
+      purgeSuperAdminFromCache();
       const saved = localStorage.getItem('simak_leaderboard_cache');
-      if (saved) return JSON.parse(saved);
+      if (saved) return JSON.parse(saved).filter((m: any) => !isSuperAdminAccount(m));
     } catch {}
-    return DEFAULT_SAMPLE_LEADERBOARD;
+    return DEFAULT_SAMPLE_LEADERBOARD.filter((m) => !isSuperAdminAccount(m));
   });
   const [isLoadingLeaderboard, setIsLoadingLeaderboard] = useState(false);
 
@@ -974,23 +977,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           npm: d.npm || d.nim || '-',
           nim: d.npm || d.nim || '-',
         }));
-        const finalLb = applyEvaluationsOverrides(applyOverrides(mapped));
+        const finalLb = applyEvaluationsOverrides(applyOverrides(mapped)).filter((m) => !isSuperAdminAccount(m));
         setLeaderboard(finalLb);
         localStorage.setItem('simak_leaderboard_cache', JSON.stringify(finalLb));
       } else {
         const cached = localStorage.getItem('simak_leaderboard_cache');
         if (cached) {
-          setLeaderboard(applyEvaluationsOverrides(applyOverrides(JSON.parse(cached))));
+          setLeaderboard(applyEvaluationsOverrides(applyOverrides(JSON.parse(cached))).filter((m) => !isSuperAdminAccount(m)));
         } else {
-          setLeaderboard(applyEvaluationsOverrides(applyOverrides(DEFAULT_SAMPLE_LEADERBOARD)));
+          setLeaderboard(applyEvaluationsOverrides(applyOverrides(DEFAULT_SAMPLE_LEADERBOARD)).filter((m) => !isSuperAdminAccount(m)));
         }
       }
     } catch {
       const cached = localStorage.getItem('simak_leaderboard_cache');
       if (cached) {
-        setLeaderboard(applyEvaluationsOverrides(applyOverrides(JSON.parse(cached))));
+        setLeaderboard(applyEvaluationsOverrides(applyOverrides(JSON.parse(cached))).filter((m) => !isSuperAdminAccount(m)));
       } else {
-        setLeaderboard(applyEvaluationsOverrides(applyOverrides(DEFAULT_SAMPLE_LEADERBOARD)));
+        setLeaderboard(applyEvaluationsOverrides(applyOverrides(DEFAULT_SAMPLE_LEADERBOARD)).filter((m) => !isSuperAdminAccount(m)));
       }
     } finally {
       setIsLoadingLeaderboard(false);
@@ -3137,8 +3140,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     </div>
 
                     {/* Podium Spotlight: Top 3 GenBI of the Month */}
-                    {leaderboard.length >= 3 && (() => {
-                      const topThree = leaderboard.slice().sort((a, b) => b.total_points - a.total_points).slice(0, 3);
+                    {leaderboard.filter((m) => !isSuperAdminAccount(m)).length >= 3 && (() => {
+                      const topThree = leaderboard
+                        .filter((m) => !isSuperAdminAccount(m))
+                        .slice()
+                        .sort((a, b) => b.total_points - a.total_points)
+                        .slice(0, 3);
                       return (
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           {/* Juara 2 (Perak) */}
@@ -3273,6 +3280,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     {/* Filtered & Sorted Leaderboard Data */}
                     {(() => {
                       const filtered = leaderboard
+                        .filter((m) => !isSuperAdminAccount(m))
                         .filter(
                           (m) =>
                             selectedLeaderboardDivision === 'Semua' ||

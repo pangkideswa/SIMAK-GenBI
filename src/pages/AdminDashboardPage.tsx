@@ -64,6 +64,8 @@ import {
   recordUnifiedAttendance,
   applyEvaluationsOverrides,
   approveAttendanceSync,
+  isSuperAdminAccount,
+  purgeSuperAdminFromCache,
 } from '../lib/attendanceSync';
 import type { Event as EventType, MemberEvaluation, EventCategory, Division, Role } from '../types/database';
 
@@ -472,7 +474,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         .order('total_points', { ascending: false });
 
       const baseEvals = (evalData && evalData.length > 0) ? (evalData as MemberEvaluation[]) : DEFAULT_SAMPLE_LEADERBOARD;
-      setEvaluations(applyEvaluationsOverrides(baseEvals));
+      setEvaluations(applyEvaluationsOverrides(baseEvals).filter((m) => !isSuperAdminAccount(m)));
 
       // 3. Ambil Pengajuan Izin & Delegasi Menunggu Verifikasi
       const { data: attData } = await supabase
@@ -674,7 +676,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         }
       }
       setEvents(filterDeletedEvents(mergedFallback as EventType[]));
-      setEvaluations(applyEvaluationsOverrides(DEFAULT_SAMPLE_LEADERBOARD));
+      setEvaluations(applyEvaluationsOverrides(DEFAULT_SAMPLE_LEADERBOARD).filter((m) => !isSuperAdminAccount(m)));
       if (user.id.startsWith('demo-')) {
         setPendingIzin(filterDeletedAttendances(DEFAULT_SAMPLE_PENDING_IZIN));
       } else {
@@ -997,6 +999,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   };
 
   useEffect(() => {
+    purgeSuperAdminFromCache();
     loadAdminData();
     loadWhitelistMembers();
 
@@ -1842,18 +1845,20 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const filteredEvaluations = evaluations.filter((ev) => {
-    const studentId = ev.npm || ev.nim || '';
-    const matchesSearch =
-      ev.full_name.toLowerCase().includes(searchMember.toLowerCase()) ||
-      studentId.toLowerCase().includes(searchMember.toLowerCase()) ||
-      ev.division.toLowerCase().includes(searchMember.toLowerCase());
+  const filteredEvaluations = evaluations
+    .filter((ev) => !isSuperAdminAccount(ev))
+    .filter((ev) => {
+      const studentId = ev.npm || ev.nim || '';
+      const matchesSearch =
+        ev.full_name.toLowerCase().includes(searchMember.toLowerCase()) ||
+        studentId.toLowerCase().includes(searchMember.toLowerCase()) ||
+        ev.division.toLowerCase().includes(searchMember.toLowerCase());
 
-    const matchesDivision =
-      selectedDivisionFilter === 'Semua' || ev.division === selectedDivisionFilter;
+      const matchesDivision =
+        selectedDivisionFilter === 'Semua' || ev.division === selectedDivisionFilter;
 
-    return matchesSearch && matchesDivision;
-  });
+      return matchesSearch && matchesDivision;
+    });
 
   const activeEventsCount = events.filter((e) => e.is_active).length;
 

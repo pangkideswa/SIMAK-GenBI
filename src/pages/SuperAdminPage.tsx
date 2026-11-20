@@ -43,6 +43,7 @@ import {
   clearAuditLogs,
   recordAuditLog,
 } from '../lib/auditLog';
+import { purgeSuperAdminFromCache } from '../lib/attendanceSync';
 import { AdminDashboardPage } from './AdminDashboardPage';
 import DashboardPage from './DashboardPage';
 import { Footer } from '../components/Footer';
@@ -198,6 +199,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
   };
 
   useEffect(() => {
+    purgeSuperAdminFromCache();
     loadAllUsers();
 
     const handleSync = () => {
@@ -389,6 +391,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
     if (!confirm('Bersihkan cache overrides lokal dan sinkronkan ulang seluruh data langsung dari Supabase?')) return;
     localStorage.removeItem('simak_whitelist_overrides');
     localStorage.removeItem('simak_leaderboard_cache');
+    localStorage.removeItem('simak_evaluations_overrides');
+    localStorage.removeItem('simak_all_attendances');
+    purgeSuperAdminFromCache();
     loadAllUsers();
     showToast('Cache lokal berhasil dibersihkan dan data disinkronkan ulang!', 'success');
   };
@@ -525,14 +530,15 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
     return matchQuery && matchDivision && matchRole;
   });
 
-  // User session untuk BPH Panel Operasional
+  // User session untuk BPH Panel Operasional (menggunakan akun personal resmi BPH Pangki Deswa Rayhandi)
   const superAdminBphUser = {
-    id: '00000000-0000-0000-0000-000000000001',
-    npm: 'SUPERADMIN',
-    nim: 'SUPERADMIN',
-    fullName: 'Pangki Deswa Rayhandi (Super Admin)',
-    division: 'BPH',
+    id: 'a1111111-1111-1111-1111-111111111111',
+    npm: '2414101078',
+    nim: '2414101078',
+    fullName: 'Pangki Deswa Rayhandi',
+    division: 'BPH' as Division,
     role: 'admin' as Role,
+    email: 'admin@genbi-unma.ac.id',
   };
 
   // User session untuk Simulator Multi-Role
