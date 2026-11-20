@@ -242,3 +242,38 @@ export function filterDeletedEvents(events: EventType[]): EventType[] {
     return events;
   }
 }
+
+/**
+ * Toggle status aktif/kunci sesi presensi agenda (Persisten di Supabase & Local Overrides)
+ */
+export async function toggleEventLock(eventId: string, nextStatus: boolean): Promise<void> {
+  // 1. Simpan ke local overrides agar instan & tidak pernah hilang saat refresh
+  try {
+    const raw = localStorage.getItem(EVENTS_OVERRIDES_KEY);
+    const overrides = raw ? JSON.parse(raw) : {};
+    overrides[eventId] = {
+      ...(overrides[eventId] || {}),
+      id: eventId,
+      is_active: nextStatus,
+    };
+    localStorage.setItem(EVENTS_OVERRIDES_KEY, JSON.stringify(overrides));
+  } catch (e) {
+    console.warn('Gagal menyimpan status kunci event ke cache lokal:', e);
+  }
+
+  // 2. Broadcast ke seluruh tab / komponen React aktif
+  try {
+    window.dispatchEvent(
+      new CustomEvent('simak_event_lock_sync', {
+        detail: { eventId, is_active: nextStatus },
+      })
+    );
+  } catch {}
+
+  // 3. Update ke Supabase database jika terhubung
+  try {
+    await (supabase.from('events') as any).update({ is_active: nextStatus }).eq('id', eventId);
+  } catch (err) {
+    console.warn('Supabase event lock update note:', err);
+  }
+}

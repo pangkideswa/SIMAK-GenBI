@@ -140,7 +140,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       if (!data || !data.authorized) {
         setNpmVerified(false);
         setErrorMessage(
-          'NPM tidak terdaftar dalam SK Penerima Beasiswa GenBI UNMA. Silakan hubungi BPH atau Admin untuk pendaftaran.'
+          'NPM tidak terdaftar dalam SK Penerima Beasiswa GenBI UNMA. Silakan hubungi BPH untuk pendaftaran.'
         );
         return;
       }
@@ -762,7 +762,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     <div>
                       <p className="font-bold text-emerald-950">{fullName}</p>
                       <p className="text-[11px] text-emerald-700">
-                        {regRole === 'kadiv' ? '⭐ Kepala Divisi' : regRole === 'admin' ? '🛡️ BPH / Admin' : 'Anggota'} • Divisi {regDivision}
+                        {regRole === 'kadiv' ? '⭐ Kepala Divisi' : regRole === 'admin' ? '🛡️ BPH' : 'Anggota'} • Divisi {regDivision}
                       </p>
                     </div>
                     <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />

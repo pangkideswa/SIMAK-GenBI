@@ -722,10 +722,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       else if (byNpm) localExtra = JSON.parse(byNpm);
     } catch {}
 
-    // Inisialisasi default demo untuk profil
-    if (user.id.startsWith('demo-')) {
-      let defaultProdi = localExtra?.study_program || 'Informatika';
-      let defaultBio = localExtra?.bio || 'Pengurus Harian GenBI UNMA • Dedikasi Untuk Negeri';
+    // Inisialisasi default demo & mode simulasi Super Admin untuk profil
+    if (user.id.startsWith('demo-') || user.id.startsWith('simulasi-')) {
+      const isSimulasiKadiv = user.role === 'kadiv';
+      let defaultProdi = localExtra?.study_program || (isSimulasiKadiv ? 'Sistem Informasi' : 'Informatika');
+      let defaultBio =
+        localExtra?.bio ||
+        (isSimulasiKadiv
+          ? `Kepala Divisi ${user.division || 'Publikasi dan Sosialisasi'} GenBI UNMA`
+          : user.role === 'admin'
+          ? 'Pengurus Harian GenBI UNMA • Dedikasi Untuk Negeri'
+          : 'Penerima Beasiswa Bank Indonesia Komisariat UNMA');
       let defaultPhone = localExtra?.phone || '081234567890';
       if (user.nim === '2214100010') {
         defaultProdi = localExtra?.study_program || 'Sistem Informasi';
@@ -738,14 +745,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       }
       setProfile((prev) => ({
         ...prev,
-        fullName: myOverride?.full_name || localExtra?.full_name || prev.fullName,
-        division: myOverride?.division || prev.division,
-        role: myOverride?.role || prev.role,
+        fullName: user.id.startsWith('simulasi-') ? user.fullName : (myOverride?.full_name || localExtra?.full_name || prev.fullName),
+        division: user.id.startsWith('simulasi-') ? user.division : (myOverride?.division || prev.division),
+        role: user.id.startsWith('simulasi-') ? user.role : (myOverride?.role || prev.role),
         studyProgram: localExtra?.study_program || prev.studyProgram || defaultProdi,
         bio: localExtra?.bio || prev.bio || defaultBio,
         phone: localExtra?.phone || prev.phone || defaultPhone,
       }));
-      setEditFullName(myOverride?.full_name || localExtra?.full_name || user.fullName);
+      setEditFullName(user.id.startsWith('simulasi-') ? user.fullName : (myOverride?.full_name || localExtra?.full_name || user.fullName));
       setEditPhone(localExtra?.phone || defaultPhone);
       setEditStudyProgram(localExtra?.study_program || defaultProdi);
       setEditBio(localExtra?.bio || defaultBio);
@@ -1085,7 +1092,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       const { data: eventData } = await supabase
         .from('events')
         .select('*')
-        .eq('is_active', true)
         .order('event_date', { ascending: true });
 
       let eventOverrides: Record<string, any> = {};
@@ -1111,7 +1117,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       // Cek dan jadwalkan pengingat otomatis jika ada agenda dalam 24 jam ke depan
       checkUpcomingAgendaReminders(activeEvents);
     } catch {
-      setEvents(filterDeletedEvents(DEFAULT_SAMPLE_EVENTS));
+      let eventOverrides: Record<string, any> = {};
+      try {
+        const raw = localStorage.getItem('simak_events_overrides');
+        if (raw) eventOverrides = JSON.parse(raw);
+      } catch {}
+
+      const merged = DEFAULT_SAMPLE_EVENTS.map((ev: any) => {
+        const ov = eventOverrides[ev.id];
+        return ov ? { ...ev, ...ov } : ev;
+      });
+      const activeEvents = filterDeletedEvents(merged.filter((ev: any) => ev.is_active !== false) as EventType[]);
+      setEvents(activeEvents);
     }
   };
 
@@ -1285,8 +1302,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       setOfflineQueueCount(getOfflineQueue().length);
     };
 
+    const handleLockSync = (e: any) => {
+      const detail = e?.detail;
+      if (detail?.eventId) {
+        if (detail.is_active === false) {
+          setEvents((prev) => prev.filter((ev) => ev.id !== detail.eventId));
+        } else {
+          fetchEvents();
+        }
+      }
+    };
+
     window.addEventListener('simak_member_sync', handleSync);
     window.addEventListener('simak_event_sync', handleEventSync);
+    window.addEventListener('simak_event_lock_sync', handleLockSync);
     window.addEventListener('simak_event_deleted', handleEventDeleted);
     window.addEventListener('simak_attendance_deleted', handleAttDeleted);
     window.addEventListener('simak_attendance_verified', handleAttVerified);
@@ -1318,6 +1347,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       cleanupOffline();
       window.removeEventListener('simak_member_sync', handleSync);
       window.removeEventListener('simak_event_sync', handleEventSync);
+      window.removeEventListener('simak_event_lock_sync', handleLockSync);
       window.removeEventListener('simak_event_deleted', handleEventDeleted);
       window.removeEventListener('simak_attendance_deleted', handleAttDeleted);
       window.removeEventListener('simak_attendance_verified', handleAttVerified);
@@ -1328,7 +1358,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       window.removeEventListener('online', updateOfflineCount);
       window.removeEventListener('offline', updateOfflineCount);
     };
-  }, [user.id]);
+  }, [user.id, user.role, user.division]);
 
   // Handler Sinkronisasi Manual Antrean Offline
   const handleManualSyncQueue = async () => {
@@ -1421,10 +1451,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         });
         setIsTorchOn(nextTorch);
       } else {
-        alert('Fitur senter/flashlight memerlukan kamera belakang aktif.');
+        showToast('Fitur senter/flashlight memerlukan kamera belakang aktif.', 'warning');
       }
     } catch {
-      alert('Senter/Flashlight tidak didukung pada browser atau perangkat ini.');
+      showToast('Senter/Flashlight tidak didukung pada browser atau perangkat ini.', 'warning');
     }
   };
 
@@ -1432,11 +1462,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPassword || newPassword.length < 4) {
-      alert('PIN / Password baru minimal 4 karakter!');
+      showToast('PIN / Password baru minimal 4 karakter!', 'warning');
       return;
     }
     if (newPassword !== confirmPassword) {
-      alert('Konfirmasi PIN baru tidak cocok dengan PIN baru!');
+      showToast('Konfirmasi PIN baru tidak cocok dengan PIN baru!', 'warning');
       return;
     }
 
@@ -1452,17 +1482,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       );
 
       if (!res.success) {
-        alert(res.message);
+        showToast(res.message, 'error');
         return;
       }
 
-      alert(res.message);
+      showToast(res.message, 'success');
       setOldPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setShowPasswordForm(false);
     } catch (err: any) {
-      alert('Gagal memperbarui PIN: ' + (err.message || 'Terjadi kesalahan'));
+      showToast('Gagal memperbarui PIN: ' + (err.message || 'Terjadi kesalahan'), 'error');
     } finally {
       setIsUpdatingPassword(false);
     }
@@ -1836,15 +1866,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const handleAjukanIzin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEventId) {
-      alert('Pilih agenda kegiatan yang ingin diajukan izin.');
+      showToast('Pilih agenda kegiatan yang ingin diajukan izin.', 'warning');
       return;
     }
     if (!keteranganIzin.trim() || keteranganIzin.trim().length < 5) {
-      alert('Keterangan alasan izin wajib diisi secara jelas (minimal 5 karakter).');
+      showToast('Keterangan alasan izin wajib diisi secara jelas (minimal 5 karakter).', 'warning');
       return;
     }
     if (!proofFile && !proofUrl.trim()) {
-      alert('Wajib melampirkan foto surat dokter, surat dispensasi, atau bukti pendukung lainnya.');
+      showToast('Wajib melampirkan foto surat dokter, surat dispensasi, atau bukti pendukung lainnya.', 'warning');
       return;
     }
 
@@ -1879,7 +1909,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
         if (error) {
           if (error.code === '23505' || error.message.includes('unique')) {
-            alert('Anda sudah pernah mengajukan presensi/izin untuk agenda ini.');
+            showToast('Anda sudah pernah mengajukan presensi/izin untuk agenda ini.', 'warning');
             setIsUploadingProof(false);
             return;
           }
@@ -1937,7 +1967,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       fetchEvaluation();
       fetchAttendances();
     } catch (err: any) {
-      alert(err.message || 'Gagal mengirim pengajuan izin.');
+      showToast(err.message || 'Gagal mengirim pengajuan izin.', 'error');
     } finally {
       setIsUploadingProof(false);
     }
@@ -1946,7 +1976,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   // Helper Ambil Lokasi GPS Nyata untuk Presensi Delegasi BI
   const handleFetchDelegasiGps = () => {
     if (!navigator.geolocation) {
-      alert('Perangkat Anda tidak mendukung fitur lokasi GPS.');
+      showToast('Perangkat Anda tidak mendukung fitur lokasi GPS.', 'warning');
       return;
     }
     setIsFetchingDelegasiGps(true);
@@ -1960,7 +1990,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       },
       (err) => {
         setIsFetchingDelegasiGps(false);
-        alert('Gagal mengambil koordinat GPS: ' + err.message);
+        showToast('Gagal mengambil koordinat GPS: ' + err.message, 'error');
       },
       { timeout: 10000, enableHighAccuracy: true }
     );
@@ -1970,15 +2000,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const handleAjukanDelegasi = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!delegasiTitle.trim() || delegasiTitle.trim().length < 4) {
-      alert('Harap isi nama kegiatan penugasan delegasi Bank Indonesia dengan jelas.');
+      showToast('Harap isi nama kegiatan penugasan delegasi Bank Indonesia dengan jelas.', 'warning');
       return;
     }
     if (!delegasiNote.trim() || delegasiNote.trim().length < 5) {
-      alert('Harap berikan deskripsi tugas delegasi atau nomor surat tugas (minimal 5 karakter).');
+      showToast('Harap berikan deskripsi tugas delegasi atau nomor surat tugas (minimal 5 karakter).', 'warning');
       return;
     }
     if (!delegasiFile && !delegasiFileUrl.trim()) {
-      alert('Wajib melampirkan foto selfie kegiatan di lokasi acara atau foto ID Card tanda pengenal delegasi.');
+      showToast('Wajib melampirkan foto selfie kegiatan di lokasi acara atau foto ID Card tanda pengenal delegasi.', 'warning');
       return;
     }
 
@@ -2038,7 +2068,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
         if (error) {
           if (error.code === '23505' || error.message.includes('unique')) {
-            alert('Anda sudah pernah mengajukan presensi delegasi pada agenda ini.');
+            showToast('Anda sudah pernah mengajukan presensi delegasi pada agenda ini.', 'warning');
             setIsUploadingDelegasi(false);
             return;
           }
@@ -2099,7 +2129,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       fetchEvaluation();
       fetchAttendances();
     } catch (err: any) {
-      alert(err.message || 'Gagal mengirim presensi tugas delegasi.');
+      showToast(err.message || 'Gagal mengirim presensi tugas delegasi.', 'error');
     } finally {
       setIsUploadingDelegasi(false);
     }

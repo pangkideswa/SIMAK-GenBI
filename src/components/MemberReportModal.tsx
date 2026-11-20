@@ -246,7 +246,7 @@ export const MemberReportModal: React.FC<MemberReportModalProps> = ({
                 Pangki Deswa Rayhandi
               </p>
               <p className="text-[10px] text-slate-500 font-mono">
-                Ketua / BPH Admin GenBI UNMA
+                Ketua / BPH GenBI UNMA
               </p>
             </div>
           </div>

@@ -6,6 +6,7 @@ export interface AcademicPeriod {
   academicYear: string;
   semester: 'Ganjil' | 'Genap';
   isActive: boolean;
+  statusLabel?: string;
   createdAt: string;
 }
 
@@ -18,23 +19,26 @@ export const DEFAULT_PERIODS: AcademicPeriod[] = [
     academicYear: '2026/2027',
     semester: 'Ganjil',
     isActive: true,
+    statusLabel: 'Periode Aktif',
     createdAt: '2026-08-01T00:00:00.000Z',
   },
   {
-    id: 'p-2025-genap',
-    name: 'T.A. 2025/2026 Genap',
-    academicYear: '2025/2026',
+    id: 'p-2026-genap',
+    name: 'T.A. 2026/2027 Genap',
+    academicYear: '2026/2027',
     semester: 'Genap',
     isActive: false,
+    statusLabel: 'Masa yang akan datang',
     createdAt: '2026-02-01T00:00:00.000Z',
   },
   {
-    id: 'p-2025-ganjil',
-    name: 'T.A. 2025/2026 Ganjil',
-    academicYear: '2025/2026',
+    id: 'p-2027-ganjil',
+    name: 'T.A. 2027/2028 Ganjil',
+    academicYear: '2027/2028',
     semester: 'Ganjil',
     isActive: false,
-    createdAt: '2025-08-01T00:00:00.000Z',
+    statusLabel: 'Masa yang akan datang',
+    createdAt: '2027-08-01T00:00:00.000Z',
   },
 ];
 
@@ -63,6 +67,7 @@ export async function saveAcademicPeriod(period: {
   academicYear: string;
   semester: 'Ganjil' | 'Genap';
   isActive?: boolean;
+  statusLabel?: string;
 }): Promise<AcademicPeriod[]> {
   const current = getAcademicPeriods();
   const targetId = period.id || 'period-' + Date.now();
@@ -79,6 +84,7 @@ export async function saveAcademicPeriod(period: {
           academicYear: period.academicYear.trim(),
           semester: period.semester,
           isActive: period.isActive ?? p.isActive,
+          statusLabel: period.statusLabel || p.statusLabel || (period.isActive ? 'Periode Aktif' : 'Masa yang akan datang'),
         };
       }
       // Jika periode ini diaktifkan, periode lain jadi non-aktif
@@ -94,6 +100,7 @@ export async function saveAcademicPeriod(period: {
       academicYear: period.academicYear.trim(),
       semester: period.semester,
       isActive: Boolean(period.isActive),
+      statusLabel: period.statusLabel || (period.isActive ? 'Periode Aktif' : 'Masa yang akan datang'),
       createdAt: new Date().toISOString(),
     };
 

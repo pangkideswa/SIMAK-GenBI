@@ -24,6 +24,8 @@ import {
   Trash2,
   CheckCircle2,
   ShieldAlert,
+  AlertCircle,
+  Info,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Division, Role } from '../types/database';
@@ -97,7 +99,18 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
   const [periodYear, setPeriodYear] = useState('2026/2027');
   const [periodSemester, setPeriodSemester] = useState<'Ganjil' | 'Genap'>('Ganjil');
   const [periodIsActive, setPeriodIsActive] = useState(false);
+  const [periodStatusLabel, setPeriodStatusLabel] = useState('Masa yang akan datang');
   const [isSavingPeriod, setIsSavingPeriod] = useState(false);
+
+  // Floating Toast Notification State
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' | 'warning' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'info' | 'error' | 'warning' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 4000);
+  };
 
   // State Audit Trail & Log Keamanan
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(getAuditLogs());
@@ -216,6 +229,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
     setPeriodYear('2026/2027');
     setPeriodSemester('Ganjil');
     setPeriodIsActive(periods.length === 0);
+    setPeriodStatusLabel('Masa yang akan datang');
     setShowPeriodModal(true);
   };
 
@@ -225,13 +239,14 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
     setPeriodYear(p.academicYear);
     setPeriodSemester(p.semester);
     setPeriodIsActive(p.isActive);
+    setPeriodStatusLabel(p.statusLabel || (p.isActive ? 'Periode Aktif' : 'Masa yang akan datang'));
     setShowPeriodModal(true);
   };
 
   const handleSavePeriodSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!periodName.trim()) {
-      alert('Nama periode wajib diisi (contoh: T.A. 2026/2027 Ganjil)!');
+      showToast('Nama periode wajib diisi (contoh: T.A. 2026/2027 Ganjil)!', 'warning');
       return;
     }
 
@@ -243,6 +258,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         academicYear: periodYear.trim(),
         semester: periodSemester,
         isActive: periodIsActive,
+        statusLabel: periodStatusLabel.trim() || (periodIsActive ? 'Periode Aktif' : 'Masa yang akan datang'),
       });
       setPeriods(updated);
       setShowPeriodModal(false);
@@ -253,13 +269,14 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         target: periodName.trim(),
         description: `${editingPeriod ? 'Memperbarui' : 'Membuat'} periode kepengurusan "${periodName.trim()}" (${periodSemester}).`,
       });
-      alert(
+      showToast(
         editingPeriod
           ? `Periode "${periodName}" berhasil diperbarui!`
-          : `Periode baru "${periodName}" berhasil ditambahkan!`
+          : `Periode baru "${periodName}" berhasil ditambahkan!`,
+        'success'
       );
     } catch (err: any) {
-      alert('Gagal menyimpan periode: ' + (err.message || 'Terjadi kesalahan sistem'));
+      showToast('Gagal menyimpan periode: ' + (err.message || 'Terjadi kesalahan sistem'), 'error');
     } finally {
       setIsSavingPeriod(false);
     }
@@ -276,15 +293,15 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         target: name,
         description: `Menetapkan periode "${name}" sebagai periode kepengurusan aktif SIMAK GENBI.`,
       });
-      alert(`Periode "${name}" sekarang aktif sebagai kepengurusan berjalan!`);
+      showToast(`Periode "${name}" sekarang aktif sebagai kepengurusan berjalan!`, 'success');
     } catch (err: any) {
-      alert('Gagal mengaktifkan periode: ' + err.message);
+      showToast('Gagal mengaktifkan periode: ' + err.message, 'error');
     }
   };
 
   const handleDeletePeriod = async (id: string, name: string) => {
     if (periods.length <= 1) {
-      alert('Tidak dapat menghapus periode terakhir! Sistem harus memiliki minimal satu periode.');
+      showToast('Tidak dapat menghapus periode terakhir! Sistem harus memiliki minimal satu periode.', 'warning');
       return;
     }
     const confirmDelete = window.confirm(`Apakah Anda yakin ingin menghapus data periode "${name}"?`);
@@ -300,9 +317,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         target: name,
         description: `Menghapus periode kepengurusan "${name}" dari sistem database.`,
       });
-      alert(`Periode "${name}" berhasil dihapus.`);
+      showToast(`Periode "${name}" berhasil dihapus.`, 'info');
     } catch (err: any) {
-      alert('Gagal menghapus periode: ' + err.message);
+      showToast('Gagal menghapus periode: ' + err.message, 'error');
     }
   };
 
@@ -318,7 +335,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
   const handleSaveMemberAccess = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMember || !editName.trim()) {
-      alert('Nama pengguna wajib diisi!');
+      showToast('Nama pengguna wajib diisi!', 'warning');
       return;
     }
 
@@ -355,13 +372,13 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         actorRole: 'Super Admin',
         actionType: 'ROLE_CHANGE',
         target: `${cleanId} (${editName.trim()})`,
-        description: `Mengubah hak akses "${editName.trim()}" menjadi ${editRole === 'admin' ? 'BPH / Administrator' : editRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'} pada divisi ${editDivision}.`,
+        description: `Mengubah hak akses "${editName.trim()}" menjadi ${editRole === 'admin' ? 'BPH' : editRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'} pada divisi ${editDivision}.`,
       });
 
       setEditingMember(null);
-      alert(`Sukses! Hak akses untuk ${editName.trim()} berhasil diubah menjadi ${editRole === 'admin' ? 'BPH / Admin' : editRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'} dan disinkronkan ke seluruh sistem!`);
+      showToast(`Sukses! Hak akses untuk ${editName.trim()} berhasil diubah menjadi ${editRole === 'admin' ? 'BPH' : editRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'} dan disinkronkan ke seluruh sistem!`, 'success');
     } catch (err: any) {
-      alert(err.message || 'Gagal menyimpan perubahan hak akses.');
+      showToast(err.message || 'Gagal menyimpan perubahan hak akses.', 'error');
     } finally {
       setIsSavingEdit(false);
     }
@@ -373,7 +390,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
     localStorage.removeItem('simak_whitelist_overrides');
     localStorage.removeItem('simak_leaderboard_cache');
     loadAllUsers();
-    alert('Cache lokal berhasil dibersihkan dan data disinkronkan ulang!');
+    showToast('Cache lokal berhasil dibersihkan dan data disinkronkan ulang!', 'success');
   };
 
   // Unduh Full Cadangan Database & Local Persistence (.JSON)
@@ -438,7 +455,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch (err: any) {
-      alert('Gagal membuat backup: ' + err.message);
+      showToast('Gagal membuat backup: ' + err.message, 'error');
     }
   };
 
@@ -478,7 +495,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
           if (lp.offline_queue) localStorage.setItem('simak_offline_queue', lp.offline_queue);
         }
 
-        alert('Data cadangan berhasil dipulihkan! Seluruh pengguna, periode, dan riwayat presensi langsung disinkronkan.');
+        showToast('Data cadangan berhasil dipulihkan! Seluruh pengguna, periode, dan riwayat presensi langsung disinkronkan.', 'success');
         loadAllUsers();
         setPeriods(getAcademicPeriods());
         setAuditLogs(getAuditLogs());
@@ -486,7 +503,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         window.dispatchEvent(new CustomEvent('simak_period_sync', { detail: { action: 'restore' } }));
         window.dispatchEvent(new CustomEvent('simak_attendance_sync', { detail: { action: 'restore' } }));
       } catch (err: any) {
-        alert('Gagal memulihkan cadangan: ' + err.message);
+        showToast('Gagal memulihkan cadangan: ' + err.message, 'error');
       } finally {
         e.target.value = '';
       }
@@ -520,9 +537,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
 
   // User session untuk Simulator Multi-Role
   const simulatedUser = {
-    id: '00000000-0000-0000-0000-000000000001',
-    npm: 'SUPERADMIN',
-    nim: 'SUPERADMIN',
+    id: `simulasi-${simulatedRole}-${simulatedDivision.replace(/\s+/g, '_').toLowerCase()}`,
+    npm: simulatedRole === 'kadiv' ? '2214100010' : '2214100048',
+    nim: simulatedRole === 'kadiv' ? '2214100010' : '2214100048',
     fullName: `Pangki Deswa Rayhandi (Simulasi ${simulatedRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'})`,
     division: simulatedDivision,
     role: simulatedRole,
@@ -530,6 +547,27 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased selection:bg-purple-600 selection:text-white">
+      {/* Floating Toast Notification (Hijau = Sukses, Merah = Gagal/Error, Kuning = Info/Peringatan) */}
+      {toast && (
+        <div
+          className={`fixed top-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl shadow-2xl backdrop-blur-md border flex items-center gap-2.5 text-xs font-bold animate-in slide-in-from-top-4 duration-300 ${
+            toast.type === 'error'
+              ? 'bg-rose-600/95 text-white border-rose-400/50 shadow-rose-950/40'
+              : toast.type === 'info' || toast.type === 'warning'
+              ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-amber-950/30 font-extrabold'
+              : 'bg-emerald-600/95 text-white border-emerald-400/50 shadow-emerald-950/40'
+          }`}
+        >
+          {toast.type === 'error' ? (
+            <AlertCircle className="w-4 h-4 text-rose-100 shrink-0" />
+          ) : toast.type === 'info' || toast.type === 'warning' ? (
+            <Info className="w-4 h-4 text-slate-950 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-100 shrink-0" />
+          )}
+          <span>{toast.message}</span>
+        </div>
+      )}
       {/* HEADER UTAMA SUPER ADMIN */}
       <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-purple-900/40 px-4 sm:px-6 lg:px-8 py-3.5 shadow-xl shadow-purple-950/20">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -667,7 +705,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   Kontrol Hak Akses Seluruh Anggota & Pengurus
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl">
-                  Ubah jabatan atau status akun (BPH Admin, Kepala Divisi, Anggota) secara instan. Perubahan akan langsung tersinkronkan realtime ke seluruh sistem dan database.
+                  Ubah jabatan atau status akun (BPH, Kepala Divisi, Anggota) secara instan. Perubahan akan langsung tersinkronkan realtime ke seluruh sistem dan database.
                 </p>
               </div>
 
@@ -710,7 +748,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   className="flex-1 sm:flex-none px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-slate-200 font-bold focus:outline-none cursor-pointer"
                 >
                   <option value="all">Semua Jabatan</option>
-                  <option value="admin">BPH / Admin</option>
+                  <option value="admin">BPH</option>
                   <option value="kadiv">Kepala Divisi</option>
                   <option value="member">Anggota</option>
                 </select>
@@ -768,7 +806,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                             {m.role === 'admin' ? (
                               <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[10px] font-black">
                                 <Shield className="w-3 h-3 text-purple-400" />
-                                <span>BPH / Admin</span>
+                                <span>BPH</span>
                               </span>
                             ) : m.role === 'kadiv' ? (
                               <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-black">
@@ -875,11 +913,11 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                             {p.isActive ? (
                               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black">
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                                <span>PERIODE AKTIF</span>
+                                <span>{p.statusLabel || 'PERIODE AKTIF'}</span>
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-bold">
-                                <span>Arsip Demisioner</span>
+                                <span>{p.statusLabel || 'Masa yang akan datang'}</span>
                               </span>
                             )}
                           </td>
@@ -1136,7 +1174,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                     if (confirm('Apakah Anda yakin ingin membersihkan seluruh riwayat log audit ini?')) {
                       clearAuditLogs();
                       setAuditLogs([]);
-                      alert('Log audit berhasil dibersihkan.');
+                      showToast('Log audit berhasil dibersihkan.', 'info');
                     }
                   }}
                   className="px-3.5 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-800/50 text-rose-300 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
@@ -1329,6 +1367,22 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 </div>
               </div>
 
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-400 uppercase">
+                  Label Status Kepengurusan
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Masa yang akan datang / Periode Aktif / Persiapan"
+                  value={periodStatusLabel}
+                  onChange={(e) => setPeriodStatusLabel(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500/40"
+                />
+                <p className="text-[10px] text-slate-500">
+                  Label kustom yang tampil di tabel (misal: "Masa yang akan datang", bukan kaku Arsip Demisioner).
+                </p>
+              </div>
+
               <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
@@ -1424,7 +1478,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   >
                     <option value="member">👤 Anggota</option>
                     <option value="kadiv">⭐ Kepala Divisi (Kadiv)</option>
-                    <option value="admin">🛡️ BPH / Administrator</option>
+                    <option value="admin">🛡️ BPH</option>
                   </select>
                 </div>
               </div>

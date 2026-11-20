@@ -33,6 +33,9 @@ import {
   Printer,
   Bell,
   Award,
+  AlertCircle,
+  Info,
+  CheckCircle2,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { supabase } from '../lib/supabase';
@@ -53,6 +56,7 @@ import {
   deleteAttendanceRecord,
   filterDeletedAttendances,
   filterDeletedEvents,
+  toggleEventLock,
 } from '../lib/eventSync';
 import { getAcademicPeriods, AcademicPeriod } from '../lib/periodSync';
 import { Footer } from '../components/Footer';
@@ -327,6 +331,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   onSwitchToMemberView,
 }) => {
   const [activeTab, setActiveTab] = useState<'events' | 'verification' | 'leaderboard' | 'whitelist'>('events');
+
+  // Floating Toast Notification State
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' | 'warning' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'info' | 'error' | 'warning' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 4000);
+  };
 
   // Periode Kepengurusan Dinamis (Tersinkronisasi dengan Super Admin)
   const initialPeriods = getAcademicPeriods();
@@ -645,7 +659,21 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         setBphAttendedEventIds((prev) => Array.from(new Set([...prev, ...bphAttList])));
       } catch {}
     } catch {
-      setEvents(filterDeletedEvents(DEFAULT_SAMPLE_EVENTS));
+      let fallbackOverrides: Record<string, any> = {};
+      try {
+        const raw = localStorage.getItem('simak_events_overrides');
+        if (raw) fallbackOverrides = JSON.parse(raw);
+      } catch {}
+      const mergedFallback = DEFAULT_SAMPLE_EVENTS.map((ev: any) => {
+        const ov = fallbackOverrides[ev.id];
+        return ov ? { ...ev, ...ov } : ev;
+      });
+      for (const [ovId, ovEv] of Object.entries(fallbackOverrides)) {
+        if (!mergedFallback.some((e: any) => e.id === ovId)) {
+          mergedFallback.unshift(ovEv);
+        }
+      }
+      setEvents(filterDeletedEvents(mergedFallback as EventType[]));
       setEvaluations(applyEvaluationsOverrides(DEFAULT_SAMPLE_LEADERBOARD));
       if (user.id.startsWith('demo-')) {
         setPendingIzin(filterDeletedAttendances(DEFAULT_SAMPLE_PENDING_IZIN));
@@ -715,7 +743,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const handleAddWhitelistMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!whiteNpm.trim() || !whiteFullName.trim()) {
-      alert('NPM dan Nama Lengkap wajib diisi!');
+      showToast('NPM dan Nama Lengkap wajib diisi!', 'warning');
       return;
     }
 
@@ -737,7 +765,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setWhiteDivision('Publikasi dan Sosialisasi');
       setWhiteRole('member');
       setIsSavingWhitelist(false);
-      alert(`Sukses menambahkan ${whiteFullName} (${whiteRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'}) ke SK Whitelist (Mode Demo)!`);
+      showToast(`Sukses menambahkan ${whiteFullName} (${whiteRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'}) ke SK Whitelist!`, 'success');
       return;
     }
     try {
@@ -757,7 +785,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         throw error;
       }
 
-      alert(`Sukses menambahkan ${whiteFullName} (${whiteRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'}) ke SK Whitelist!`);
+      showToast(`Sukses menambahkan ${whiteFullName} (${whiteRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'}) ke SK Whitelist!`, 'success');
       setShowAddWhitelistModal(false);
       setWhiteNpm('');
       setWhiteFullName('');
@@ -765,7 +793,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setWhiteRole('member');
       loadWhitelistMembers();
     } catch (err: any) {
-      alert(err.message || 'Gagal menambahkan anggota ke SK Whitelist.');
+      showToast(err.message || 'Gagal menambahkan anggota ke SK Whitelist.', 'error');
     } finally {
       setIsSavingWhitelist(false);
     }
@@ -779,7 +807,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   // Parser & Handler Import Massal CSV
   const handleImportCsv = async () => {
     if (!csvText.trim()) {
-      alert('Masukkan atau upload data teks CSV terlebih dahulu.');
+      showToast('Masukkan atau upload data teks CSV terlebih dahulu.', 'warning');
       return;
     }
 
@@ -842,7 +870,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setShowImportCsvModal(false);
       setCsvText('');
       setIsImportingCsv(false);
-      alert(`Berhasil mengimpor ${toInsert.length} data anggota resmi ke SK Whitelist (Mode Demo)!`);
+      showToast(`Berhasil mengimpor ${toInsert.length} data anggota resmi ke SK Whitelist!`, 'success');
       return;
     }
     try {
@@ -927,12 +955,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
       if (error) throw error;
 
-      alert(`Berhasil mengimpor ${toInsert.length} data anggota resmi ke SK Whitelist!`);
+      showToast(`Berhasil mengimpor ${toInsert.length} data anggota resmi ke SK Whitelist!`, 'success');
       setShowImportCsvModal(false);
       setCsvText('');
       loadWhitelistMembers();
     } catch (err: any) {
-      alert(err.message || 'Gagal memproses impor CSV.');
+      showToast(err.message || 'Gagal memproses impor CSV.', 'error');
     } finally {
       setIsImportingCsv(false);
     }
@@ -954,7 +982,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     } catch {}
 
     if (user.id.startsWith('demo-')) {
-      alert(`NPM ${identifier} berhasil dihapus dari SK Whitelist (Mode Demo).`);
+      showToast(`NPM ${identifier} berhasil dihapus dari SK Whitelist.`, 'info');
       return;
     }
 
@@ -962,7 +990,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       await (supabase.from('authorized_members') as any)
         .delete()
         .or(`npm.eq.${identifier},nim.eq.${identifier}`);
-      alert(`NPM ${identifier} berhasil dihapus dari SK Whitelist.`);
+      showToast(`NPM ${identifier} berhasil dihapus dari SK Whitelist.`, 'info');
     } catch (err: any) {
       console.warn('Database note:', err);
     }
@@ -1046,8 +1074,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       }
     };
 
+    const handleLockSync = (e: any) => {
+      const detail = e?.detail;
+      if (detail?.eventId) {
+        setEvents((prev) =>
+          prev.map((ev) => (ev.id === detail.eventId ? { ...ev, is_active: detail.is_active } : ev))
+        );
+      }
+    };
+
     window.addEventListener('simak_member_sync', handleSyncEvent);
     window.addEventListener('simak_event_sync', handleEventSync);
+    window.addEventListener('simak_event_lock_sync', handleLockSync);
     window.addEventListener('simak_event_deleted', handleEventDeleted);
     window.addEventListener('simak_attendance_deleted', handleAttDeleted);
     window.addEventListener('simak_attendance_submitted', handleAttSubmitted);
@@ -1058,6 +1096,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     return () => {
       window.removeEventListener('simak_member_sync', handleSyncEvent);
       window.removeEventListener('simak_event_sync', handleEventSync);
+      window.removeEventListener('simak_event_lock_sync', handleLockSync);
       window.removeEventListener('simak_event_deleted', handleEventDeleted);
       window.removeEventListener('simak_attendance_deleted', handleAttDeleted);
       window.removeEventListener('simak_attendance_submitted', handleAttSubmitted);
@@ -1152,12 +1191,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }
   };
 
-  // Toggle Buka / Kunci Sesi Absensi
+  // Toggle Buka / Kunci Sesi Absensi (Persisten Lokal & Supabase)
   const handleToggleEventActive = async (eventId: string, currentStatus: boolean) => {
     const nextStatus = !currentStatus;
     const targetEv = events.find((e) => e.id === eventId);
     try {
-      await (supabase.from('events') as any).update({ is_active: nextStatus }).eq('id', eventId);
+      await toggleEventLock(eventId, nextStatus);
       setEvents((prev) =>
         prev.map((e) => (e.id === eventId ? { ...e, is_active: nextStatus } : e))
       );
@@ -1170,15 +1209,22 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       // Catat Audit Trail Log
       recordAuditLog({
         actorName: user.fullName,
-        actorRole: 'BPH / Administrator',
+        actorRole: 'BPH',
         actionType: 'EVENT_SESSION_TOGGLE',
         target: targetEv?.title || eventId,
         description: nextStatus
           ? `Membuka sesi presensi untuk agenda "${targetEv?.title || eventId}" (+${targetEv?.points || 15} Poin).`
           : `Mengunci sesi presensi untuk agenda "${targetEv?.title || eventId}".`,
       });
+
+      showToast(
+        nextStatus
+          ? `Sesi presensi "${targetEv?.title || 'Agenda'}" berhasil dibuka!`
+          : `Sesi presensi "${targetEv?.title || 'Agenda'}" berhasil dikunci!`,
+        nextStatus ? 'success' : 'info'
+      );
     } catch (err: any) {
-      alert('Gagal mengubah status sesi: ' + err.message);
+      showToast('Gagal mengubah status sesi: ' + (err.message || 'Terjadi kesalahan'), 'error');
     }
   };
 
@@ -1189,14 +1235,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         body: 'Notifikasi presensi dan sesi operasional BPH aktif.',
         icon: '/logo-genbi.png',
       });
-      alert('Notifikasi browser aktif! Tes notifikasi telah dikirim ke perangkat Anda.');
+      showToast('Notifikasi browser aktif! Tes notifikasi telah dikirim ke perangkat Anda.', 'success');
     } else {
       const res = await requestNotificationPermission();
       if (res.granted) {
         setIsPushEnabled(true);
-        alert('Notifikasi pengingat sesi presensi berhasil diaktifkan!');
+        showToast('Notifikasi pengingat sesi presensi berhasil diaktifkan!', 'success');
       } else {
-        alert('Izin notifikasi tidak diizinkan oleh browser.');
+        showToast('Izin notifikasi tidak diizinkan oleh browser.', 'warning');
       }
     }
   };
@@ -1240,15 +1286,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
       recordAuditLog({
         actorName: user.fullName,
-        actorRole: 'BPH / Administrator',
+        actorRole: 'BPH',
         actionType: 'EVENT_CREATE',
         target: newTitle.trim(),
         description: `Membuat agenda baru "${newTitle.trim()}" kategori ${newCategory} (+${newPoints} Poin).`,
       });
 
-      alert(`Sesi kegiatan "${newTitle}" berhasil dibuat dan sesi presensi aktif!`);
+      showToast(`Sesi kegiatan "${newTitle}" berhasil dibuat dan sesi presensi aktif!`, 'success');
     } catch (err: any) {
-      alert('Gagal membuat acara: ' + (err.message || 'Terjadi kesalahan sistem'));
+      showToast('Gagal membuat acara: ' + (err.message || 'Terjadi kesalahan sistem'), 'error');
     } finally {
       setIsSubmittingEvent(false);
     }
@@ -1257,7 +1303,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   // Presensi Mandiri Akun BPH (1-Klik Hadir Langsung - Sinkron 100% ke Seluruh Halaman)
   const handleSelfAttendanceBph = async (ev: EventType) => {
     if (bphAttendedEventIds.includes(ev.id)) {
-      alert(`Anda sudah tercatat hadir pada kegiatan "${ev.title}".`);
+      showToast(`Anda sudah tercatat hadir pada kegiatan "${ev.title}".`, 'info');
       return;
     }
 
@@ -1339,9 +1385,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         });
       }
 
-      alert(`✓ Presensi Mandiri BPH Berhasil!\n\nNama: ${user.fullName}\nKegiatan: ${ev.title}\nPoin Diperoleh: +${ev.points || 15} Poin.\nData tersinkronisasi 100% ke Riwayat Kartu Anggota dan Leaderboard.`);
+      showToast(`✓ Presensi Mandiri BPH Berhasil! (+${ev.points || 15} Poin)`, 'success');
     } catch (err: any) {
-      alert('Gagal mencatat presensi BPH: ' + (err.message || 'Terjadi kesalahan sistem'));
+      showToast('Gagal mencatat presensi BPH: ' + (err.message || 'Terjadi kesalahan sistem'), 'error');
     } finally {
       setIsSubmittingBphAtt(false);
     }
@@ -1383,9 +1429,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       );
       setShowEditEventModal(false);
       setEditingEvent(null);
-      alert(`Agenda "${editEventTitle}" berhasil diperbarui!`);
+      showToast(`Agenda "${editEventTitle}" berhasil diperbarui!`, 'success');
     } catch (err: any) {
-      alert('Gagal memperbarui acara: ' + (err.message || 'Terjadi kesalahan'));
+      showToast('Gagal memperbarui acara: ' + (err.message || 'Terjadi kesalahan'), 'error');
     } finally {
       setIsUpdatingEvent(false);
     }
@@ -1400,14 +1446,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setEvents((prev) => prev.filter((ev) => ev.id !== eventId));
       recordAuditLog({
         actorName: user.fullName,
-        actorRole: 'BPH / Administrator',
+        actorRole: 'BPH',
         actionType: 'EVENT_DELETE',
         target: title,
         description: `Menghapus agenda kegiatan "${title}" secara permanen dari sistem.`,
       });
-      alert(`Agenda "${title}" berhasil dihapus.`);
+      showToast(`Agenda "${title}" berhasil dihapus.`, 'info');
     } catch (err: any) {
-      alert('Gagal menghapus acara: ' + err.message);
+      showToast('Gagal menghapus acara: ' + err.message, 'error');
     }
   };
 
@@ -1431,7 +1477,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const handleUpdateWhitelist = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingWhitelist || !editWhiteFullName.trim()) {
-      alert('Nama Lengkap tidak boleh kosong!');
+      showToast('Nama Lengkap tidak boleh kosong!', 'warning');
       return;
     }
 
@@ -1485,7 +1531,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setShowEditWhitelistModal(false);
     setEditingWhitelist(null);
     setIsUpdatingWhitelist(false);
-    alert(`Data SK untuk ${editWhiteFullName} berhasil diperbarui & disinkronkan ke seluruh sistem!`);
+    showToast(`Data SK untuk ${editWhiteFullName} berhasil diperbarui & disinkronkan ke seluruh sistem!`, 'success');
   };
 
   // Hapus / Batalkan Pengajuan Izin
@@ -1494,7 +1540,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
     if (user.id.startsWith('demo-')) {
       setPendingIzin(pendingIzin.filter((p) => p.id !== id));
-      alert('Pengajuan izin dihapus (Mode Demo).');
+      showToast('Pengajuan izin dihapus.', 'info');
       return;
     }
 
@@ -1502,10 +1548,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       const { error } = await supabase.from('attendances').delete().eq('id', id);
       if (error) throw error;
       setPendingIzin(pendingIzin.filter((p) => p.id !== id));
-      alert('Pengajuan izin berhasil dihapus.');
+      showToast('Pengajuan izin berhasil dihapus.', 'info');
       loadAdminData();
     } catch (err: any) {
-      alert('Gagal menghapus izin: ' + err.message);
+      showToast('Gagal menghapus izin: ' + err.message, 'error');
     }
   };
 
@@ -1538,10 +1584,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         })
       );
 
-      alert(`Presensi untuk ${memberName} berhasil dihapus dari sistem!`);
+      showToast(`Presensi untuk ${memberName} berhasil dihapus dari sistem!`, 'info');
       loadAdminData();
     } catch (err: any) {
-      alert('Gagal menghapus presensi: ' + err.message);
+      showToast('Gagal menghapus presensi: ' + err.message, 'error');
     }
   };
 
@@ -1549,7 +1595,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const handleAddManualAttendance = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEventForParticipants || !manualMemberNpm.trim()) {
-      alert('Pilih atau masukkan NPM anggota!');
+      showToast('Pilih atau masukkan NPM anggota!', 'warning');
       return;
     }
 
@@ -1611,11 +1657,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setParticipants([newPart, ...participants]);
       setShowManualAttendanceModal(false);
       setManualMemberNpm('');
-      alert(`Berhasil mencatat presensi manual untuk ${targetName}!`);
+      showToast(`Berhasil mencatat presensi manual untuk ${targetName}!`, 'success');
       loadAdminData();
       loadAdminData();
     } catch (err: any) {
-      alert(err.message || 'Gagal menambahkan presensi manual.');
+      showToast(err.message || 'Gagal menambahkan presensi manual.', 'error');
     } finally {
       setIsSubmittingManualAtt(false);
     }
@@ -1640,10 +1686,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
     if (user.id.startsWith('demo-') || id.startsWith('delegasi-') || id.startsWith('izin-')) {
       setPendingIzin(pendingIzin.filter((p) => p.id !== id));
-      alert(
+      showToast(
         isDelegasi
           ? 'Tugas delegasi BI disetujui (+30 Poin ditambahkan & disiarkan realtime ke HP anggota)!'
-          : 'Dispensasi izin disetujui (Disiarkan realtime ke HP anggota)!'
+          : 'Dispensasi izin disetujui (Disiarkan realtime ke HP anggota)!',
+        'success'
       );
       loadAdminData();
       return;
@@ -1655,7 +1702,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       const approvedTarget = pendingIzin.find((p) => p.id === id);
       recordAuditLog({
         actorName: user.fullName,
-        actorRole: 'BPH / Administrator',
+        actorRole: 'BPH',
         actionType: isDelegasi ? 'DELEGASI_APPROVE' : 'IZIN_APPROVE',
         target: approvedTarget?.member_name || id,
         description: isDelegasi
@@ -1663,14 +1710,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           : `Menyetujui dispensasi izin kegiatan untuk ${approvedTarget?.member_name || id}.`,
       });
 
-      alert(
+      showToast(
         isDelegasi
           ? 'Tugas delegasi Bank Indonesia resmi disetujui (+30 Poin ditambahkan & disiarkan realtime ke HP anggota)!'
-          : 'Permohonan izin resmi disetujui & disinkronkan ke HP anggota.'
+          : 'Permohonan izin resmi disetujui & disinkronkan ke HP anggota.',
+        'success'
       );
       loadAdminData();
     } catch (err: any) {
-      alert('Gagal memverifikasi izin: ' + err.message);
+      showToast('Gagal memverifikasi izin: ' + err.message, 'error');
     }
   };
 
@@ -1678,7 +1726,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const handleRejectIzin = async () => {
     if (!rejectAttendanceId) return;
     if (!rejectionReason.trim()) {
-      alert('Berikan alasan penolakan izin (contoh: surat tidak valid / tidak ada tanda tangan dokter).');
+      showToast('Berikan alasan penolakan izin (contoh: surat tidak valid / tidak ada tanda tangan dokter).', 'warning');
       return;
     }
 
@@ -1686,7 +1734,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setPendingIzin(pendingIzin.filter((p) => p.id !== rejectAttendanceId));
       setRejectAttendanceId(null);
       setRejectionReason('');
-      alert('Pengajuan izin ditolak dan dicatat (Mode Demo).');
+      showToast('Pengajuan izin ditolak dan dicatat.', 'info');
       return;
     }
 
@@ -1703,10 +1751,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setPendingIzin(pendingIzin.filter((p) => p.id !== rejectAttendanceId));
       setRejectAttendanceId(null);
       setRejectionReason('');
-      alert('Pengajuan izin ditolak. Status kehadiran diubah menjadi Alfa.');
+      showToast('Pengajuan izin ditolak. Status kehadiran diubah menjadi Alfa.', 'warning');
       loadAdminData();
     } catch (err: any) {
-      alert('Gagal menolak izin: ' + err.message);
+      showToast('Gagal menolak izin: ' + err.message, 'error');
     } finally {
       setIsSubmittingRejection(false);
     }
@@ -1715,7 +1763,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   // Export Rekapitulasi LPJ Format Baku Bank Indonesia (Excel / CSV dengan UTF-8 BOM)
   const handleExportCSV = () => {
     if (evaluations.length === 0) {
-      alert('Tidak ada data rekap untuk diekspor.');
+      showToast('Tidak ada data rekap untuk diekspor.', 'warning');
       return;
     }
 
@@ -1738,7 +1786,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       const studentId = m.npm || m.nim || '-';
       const roleName =
         m.role === 'admin'
-          ? 'BPH / Pengurus Harian'
+          ? 'BPH'
           : m.role === 'kadiv'
           ? 'Kepala Divisi (Kadiv)'
           : 'Anggota';
@@ -1817,6 +1865,28 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         <div className="absolute top-0 right-0 w-96 h-96 rounded-full bg-blue-600/15 blur-3xl animate-pulse" />
         <div className="absolute bottom-0 left-0 w-96 h-96 rounded-full bg-indigo-500/15 blur-3xl" />
       </div>
+
+      {/* Floating Toast Notification (Hijau = Sukses, Merah = Gagal/Error, Kuning = Info/Peringatan) */}
+      {toast && (
+        <div
+          className={`fixed top-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-2xl shadow-2xl backdrop-blur-md border flex items-center gap-2.5 text-xs font-bold animate-in slide-in-from-top-4 duration-300 ${
+            toast.type === 'error'
+              ? 'bg-rose-600/95 text-white border-rose-400/50 shadow-rose-950/40'
+              : toast.type === 'info' || toast.type === 'warning'
+              ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-amber-950/30 font-extrabold'
+              : 'bg-emerald-600/95 text-white border-emerald-400/50 shadow-emerald-950/40'
+          }`}
+        >
+          {toast.type === 'error' ? (
+            <AlertCircle className="w-4 h-4 text-rose-100 shrink-0" />
+          ) : toast.type === 'info' || toast.type === 'warning' ? (
+            <Info className="w-4 h-4 text-slate-950 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-100 shrink-0" />
+          )}
+          <span>{toast.message}</span>
+        </div>
+      )}
 
       <div className="w-full max-w-7xl min-h-screen flex flex-col pb-20">
         {/* Sticky Header BPH */}
