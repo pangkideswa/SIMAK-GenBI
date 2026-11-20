@@ -51,7 +51,23 @@ export function getAcademicPeriods(): AcademicPeriod[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        let changed = false;
+        const normalized = parsed.map((p) => {
+          let label = p.statusLabel;
+          // Normalisasi label kaku usang 'Arsip Demisioner' atau label kosong menjadi 'Masa yang akan datang'
+          if (!label || label === 'Arsip Demisioner') {
+            label = p.isActive ? 'Periode Aktif' : 'Masa yang akan datang';
+            changed = true;
+          }
+          return {
+            ...p,
+            statusLabel: label,
+          };
+        });
+        if (changed) {
+          localStorage.setItem(PERIODS_STORAGE_KEY, JSON.stringify(normalized));
+        }
+        return normalized;
       }
     }
   } catch {}
@@ -134,10 +150,18 @@ export async function saveAcademicPeriod(period: {
  */
 export function setActivePeriod(periodId: string): AcademicPeriod[] {
   const current = getAcademicPeriods();
-  const updated = current.map((p) => ({
-    ...p,
-    isActive: p.id === periodId,
-  }));
+  const updated = current.map((p) => {
+    const isNowActive = p.id === periodId;
+    return {
+      ...p,
+      isActive: isNowActive,
+      statusLabel: isNowActive
+        ? 'Periode Aktif'
+        : p.statusLabel && p.statusLabel !== 'Periode Aktif'
+        ? p.statusLabel
+        : 'Masa yang akan datang',
+    };
+  });
 
   localStorage.setItem(PERIODS_STORAGE_KEY, JSON.stringify(updated));
   window.dispatchEvent(

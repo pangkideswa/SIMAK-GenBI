@@ -2069,6 +2069,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 {(() => {
                   const matched = academicPeriods.find((p) => p.name === selectedSemester);
                   const isCurrentActive = matched ? matched.isActive : selectedSemester.includes('Aktif');
+                  const label = matched?.statusLabel || (isCurrentActive ? 'Aktif' : 'Masa yang akan datang');
                   return (
                     <span
                       className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
@@ -2077,7 +2078,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           : 'bg-amber-50 text-amber-700 border border-amber-200'
                       }`}
                     >
-                      {isCurrentActive ? 'Aktif' : 'Demisioner'}
+                      {label}
                     </span>
                   );
                 })()}
@@ -2092,7 +2093,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               >
                 {academicPeriods.map((p) => (
                   <option key={p.id} value={p.name}>
-                    {p.name} {p.isActive ? '(Periode Aktif)' : '(Arsip Demisioner)'}
+                    {p.name} {p.isActive ? '(Periode Aktif)' : `(${p.statusLabel || 'Masa yang akan datang'})`}
                   </option>
                 ))}
               </select>
@@ -2102,6 +2103,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 {(() => {
                   const matched = academicPeriods.find((p) => p.name === selectedSemester);
                   const isCurrentActive = matched ? matched.isActive : selectedSemester.includes('Aktif');
+                  const label = matched?.statusLabel || (isCurrentActive ? 'Kepengurusan Aktif' : 'Masa yang akan datang');
                   return (
                     <span
                       className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase ${
@@ -2110,7 +2112,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           : 'bg-amber-50 text-amber-700 border border-amber-200'
                       }`}
                     >
-                      {isCurrentActive ? 'Kepengurusan Aktif' : 'Arsip Demisioner'}
+                      {label}
                     </span>
                   );
                 })()}
@@ -2118,16 +2120,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </div>
           </div>
 
-          {/* Banner Peringatan Saat Meninjau Arsip Demisioner */}
+          {/* Banner Peringatan Saat Meninjau Periode Non-Aktif / Masa Datang */}
           {(() => {
             const matched = academicPeriods.find((p) => p.name === selectedSemester);
             const isCurrentActive = matched ? matched.isActive : selectedSemester.includes('Aktif');
             if (!isCurrentActive) {
+              const label = matched?.statusLabel || 'Masa yang akan datang';
               return (
                 <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-300 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
                   <div className="flex items-center gap-2 font-bold">
                     <CalendarDays className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>Anda sedang meninjau arsip historis kepengurusan {selectedSemester} (Mode Demisioner).</span>
+                    <span>Anda sedang meninjau kepengurusan {selectedSemester} ({label}).</span>
                   </div>
                   <button
                     onClick={() => {
