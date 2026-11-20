@@ -69,37 +69,46 @@ export function disablePushNotification(): void {
 /**
  * Mengirimkan notifikasi lokal ke sistem desktop/smartphone
  */
-export function sendWebNotification(
+export async function sendWebNotification(
   title: string,
   options?: NotificationOptions
-): boolean {
+): Promise<boolean> {
   if (!isNotificationSupported() || Notification.permission !== 'granted') {
     return false;
   }
 
-  const defaultOptions: NotificationOptions = {
+  const defaultOptions: any = {
     icon: '/logo-genbi.png',
     badge: '/logo-genbi.png',
     tag: 'simak-genbi-alert',
+    vibrate: [200, 100, 200],
     ...options,
   };
 
   try {
-    // 1. Coba lewat Service Worker jika terdaftar (PWA Mobile)
+    // 1. Coba lewat Service Worker jika terdaftar (Sangat penting untuk PWA Mobile Android & iOS)
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready
-        .then((registration) => {
-          registration.showNotification(title, defaultOptions);
-        })
-        .catch(() => {
-          new Notification(title, defaultOptions);
-        });
-      return true;
+      try {
+        const reg = (await navigator.serviceWorker.getRegistration()) || (await navigator.serviceWorker.ready);
+        if (reg && 'showNotification' in reg) {
+          await reg.showNotification(title, defaultOptions);
+          return true;
+        }
+      } catch (swErr) {
+        console.warn('SW notification fallback:', swErr);
+      }
     }
 
-    // 2. Fallback Notification API langsung
-    new Notification(title, defaultOptions);
-    return true;
+    // 2. Fallback Notification API langsung (Desktop Chrome/Firefox/Edge)
+    if (typeof Notification !== 'undefined') {
+      try {
+        new Notification(title, defaultOptions);
+        return true;
+      } catch (notifErr) {
+        console.warn('Direct notification error:', notifErr);
+      }
+    }
+    return false;
   } catch (err) {
     console.warn('Gagal mengirimkan notifikasi:', err);
     return false;

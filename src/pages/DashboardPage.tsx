@@ -46,7 +46,7 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react';
 import { Html5Qrcode } from 'html5-qrcode';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import { supabase } from '../lib/supabase';
 import { uploadProofToGDrive } from '../lib/gdrive';
 import { normalizeStudentId } from '../lib/memberSync';
@@ -316,9 +316,33 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     fullName: user.fullName,
     division: user.division,
     role: user.role,
-    phone: null,
-    studyProgram: null,
-    bio: null,
+    phone: (() => {
+      try {
+        const byId = localStorage.getItem('simak_profile_extra_' + user.id);
+        if (byId) return JSON.parse(byId)?.phone || null;
+        const byNpm = localStorage.getItem('simak_profile_extra_' + currentNpm);
+        if (byNpm) return JSON.parse(byNpm)?.phone || null;
+      } catch {}
+      return null;
+    })(),
+    studyProgram: (() => {
+      try {
+        const byId = localStorage.getItem('simak_profile_extra_' + user.id);
+        if (byId) return JSON.parse(byId)?.study_program || null;
+        const byNpm = localStorage.getItem('simak_profile_extra_' + currentNpm);
+        if (byNpm) return JSON.parse(byNpm)?.study_program || null;
+      } catch {}
+      return null;
+    })(),
+    bio: (() => {
+      try {
+        const byId = localStorage.getItem('simak_profile_extra_' + user.id);
+        if (byId) return JSON.parse(byId)?.bio || null;
+        const byNpm = localStorage.getItem('simak_profile_extra_' + currentNpm);
+        if (byNpm) return JSON.parse(byNpm)?.bio || null;
+      } catch {}
+      return null;
+    })(),
     avatarUrl: (() => {
       try {
         return localStorage.getItem('simak_avatar_' + user.id) || null;
@@ -408,9 +432,33 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
   // Profile Edit Form State
   const [editFullName, setEditFullName] = useState(user.fullName);
-  const [editPhone, setEditPhone] = useState('');
-  const [editStudyProgram, setEditStudyProgram] = useState('');
-  const [editBio, setEditBio] = useState('');
+  const [editPhone, setEditPhone] = useState(() => {
+    try {
+      const byId = localStorage.getItem('simak_profile_extra_' + user.id);
+      if (byId) return JSON.parse(byId)?.phone || '';
+      const byNpm = localStorage.getItem('simak_profile_extra_' + currentNpm);
+      if (byNpm) return JSON.parse(byNpm)?.phone || '';
+    } catch {}
+    return '';
+  });
+  const [editStudyProgram, setEditStudyProgram] = useState(() => {
+    try {
+      const byId = localStorage.getItem('simak_profile_extra_' + user.id);
+      if (byId) return JSON.parse(byId)?.study_program || '';
+      const byNpm = localStorage.getItem('simak_profile_extra_' + currentNpm);
+      if (byNpm) return JSON.parse(byNpm)?.study_program || '';
+    } catch {}
+    return '';
+  });
+  const [editBio, setEditBio] = useState(() => {
+    try {
+      const byId = localStorage.getItem('simak_profile_extra_' + user.id);
+      if (byId) return JSON.parse(byId)?.bio || '';
+      const byNpm = localStorage.getItem('simak_profile_extra_' + currentNpm);
+      if (byNpm) return JSON.parse(byNpm)?.bio || '';
+    } catch {}
+    return '';
+  });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Scanner & Presensi State
@@ -642,16 +690,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   };
 
   // Toast Notification State
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' | 'warning' } | null>(null);
 
   // QR Anggota Timer
   const [qrCodeTimer, setQrCodeTimer] = useState(45);
 
-  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+  const showToast = (message: string, type: 'success' | 'info' | 'error' | 'warning' = 'success') => {
     setToast({ message, type });
     setTimeout(() => {
       setToast(null);
-    }, 3800);
+    }, 4000);
   };
 
   // 1. Fetch Profile secara independen
@@ -665,95 +713,120 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     const myCleanId = normalizeStudentId(user.npm || user.nim);
     const myOverride = overrides[myCleanId];
 
+    // Baca data tambahan profil tersimpan dari localStorage
+    let localExtra: any = null;
+    try {
+      const byId = localStorage.getItem('simak_profile_extra_' + user.id);
+      const byNpm = localStorage.getItem('simak_profile_extra_' + myCleanId);
+      if (byId) localExtra = JSON.parse(byId);
+      else if (byNpm) localExtra = JSON.parse(byNpm);
+    } catch {}
+
     // Inisialisasi default demo untuk profil
     if (user.id.startsWith('demo-')) {
-      let defaultProdi = 'Informatika';
-      let defaultBio = 'Pengurus Harian GenBI UNMA • Dedikasi Untuk Negeri';
-      let defaultPhone = '081234567890';
+      let defaultProdi = localExtra?.study_program || 'Informatika';
+      let defaultBio = localExtra?.bio || 'Pengurus Harian GenBI UNMA • Dedikasi Untuk Negeri';
+      let defaultPhone = localExtra?.phone || '081234567890';
       if (user.nim === '2214100010') {
-        defaultProdi = 'Sistem Informasi';
-        defaultBio = 'Kepala Divisi Publikasi dan Sosialisasi GenBI UNMA';
-        defaultPhone = '082345678901';
+        defaultProdi = localExtra?.study_program || 'Sistem Informasi';
+        defaultBio = localExtra?.bio || 'Kepala Divisi Publikasi dan Sosialisasi GenBI UNMA';
+        defaultPhone = localExtra?.phone || '082345678901';
       } else if (user.nim === '2214100048') {
-        defaultProdi = 'Manajemen';
-        defaultBio = 'Penerima Beasiswa Bank Indonesia Komisariat UNMA';
-        defaultPhone = '083456789012';
+        defaultProdi = localExtra?.study_program || 'Manajemen';
+        defaultBio = localExtra?.bio || 'Penerima Beasiswa Bank Indonesia Komisariat UNMA';
+        defaultPhone = localExtra?.phone || '083456789012';
       }
       setProfile((prev) => ({
         ...prev,
-        fullName: myOverride?.full_name || prev.fullName,
+        fullName: myOverride?.full_name || localExtra?.full_name || prev.fullName,
         division: myOverride?.division || prev.division,
         role: myOverride?.role || prev.role,
-        studyProgram: prev.studyProgram || defaultProdi,
-        bio: prev.bio || defaultBio,
-        phone: prev.phone || defaultPhone,
+        studyProgram: localExtra?.study_program || prev.studyProgram || defaultProdi,
+        bio: localExtra?.bio || prev.bio || defaultBio,
+        phone: localExtra?.phone || prev.phone || defaultPhone,
       }));
-      setEditFullName(myOverride?.full_name || user.fullName);
-      setEditPhone(defaultPhone);
-      setEditStudyProgram(defaultProdi);
-      setEditBio(defaultBio);
+      setEditFullName(myOverride?.full_name || localExtra?.full_name || user.fullName);
+      setEditPhone(localExtra?.phone || defaultPhone);
+      setEditStudyProgram(localExtra?.study_program || defaultProdi);
+      setEditBio(localExtra?.bio || defaultBio);
       return;
     }
 
     try {
-      const { data: profData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      let p: any = null;
+      try {
+        const { data: profData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+        p = profData;
+      } catch {}
 
-      const p = profData as any;
-      if (p) {
-        const studentId = p.npm || p.nim || user.npm || user.nim || '-';
-        const cleanId = normalizeStudentId(studentId);
-        const ov = overrides[cleanId];
-
-        const cachedAvatar = (() => {
-          try {
-            return localStorage.getItem('simak_avatar_' + user.id);
-          } catch {
-            return null;
-          }
-        })();
-        const effectiveAvatar = p.avatar_url || cachedAvatar || null;
-        if (p.avatar_url && p.avatar_url !== cachedAvatar) {
-          try {
-            localStorage.setItem('simak_avatar_' + user.id, p.avatar_url);
-          } catch {}
-        }
-
-        setProfile({
-          id: p.id,
-          npm: studentId,
-          nim: studentId,
-          fullName: ov?.full_name || p.full_name || user.fullName,
-          division: ov?.division || p.division || user.division,
-          role: ov?.role || p.role || user.role,
-          phone: p.phone || null,
-          studyProgram: p.study_program || null,
-          bio: p.bio || null,
-          avatarUrl: effectiveAvatar,
-        });
-        setEditFullName(ov?.full_name || p.full_name || user.fullName);
-        setEditPhone(p.phone || '');
-        setEditStudyProgram(p.study_program || '');
-        setEditBio(p.bio || '');
-      } else if (myOverride) {
-        setProfile((prev) => ({
-          ...prev,
-          fullName: myOverride.full_name || prev.fullName,
-          division: myOverride.division || prev.division,
-          role: myOverride.role || prev.role,
-        }));
+      if (!p && myCleanId) {
+        try {
+          const { data: profByNpm } = await supabase
+            .from('profiles')
+            .select('*')
+            .or(`npm.eq.${myCleanId},nim.eq.${myCleanId}`)
+            .maybeSingle();
+          p = profByNpm;
+        } catch {}
       }
+
+      const cachedAvatar = (() => {
+        try {
+          return localStorage.getItem('simak_avatar_' + user.id);
+        } catch {
+          return null;
+        }
+      })();
+      const effectiveAvatar = p?.avatar_url || cachedAvatar || null;
+      if (p?.avatar_url && p.avatar_url !== cachedAvatar) {
+        try {
+          localStorage.setItem('simak_avatar_' + user.id, p.avatar_url);
+        } catch {}
+      }
+
+      const studentId = p?.npm || p?.nim || user.npm || user.nim || '-';
+      const cleanId = normalizeStudentId(studentId);
+      const ov = overrides[cleanId] || myOverride;
+
+      const finalPhone = p?.phone || localExtra?.phone || null;
+      const finalProdi = p?.study_program || localExtra?.study_program || null;
+      const finalBio = p?.bio || localExtra?.bio || null;
+      const finalFullName = ov?.full_name || p?.full_name || localExtra?.full_name || user.fullName;
+
+      setProfile({
+        id: p?.id || user.id,
+        npm: studentId,
+        nim: studentId,
+        fullName: finalFullName,
+        division: ov?.division || p?.division || user.division,
+        role: ov?.role || p?.role || user.role,
+        phone: finalPhone,
+        studyProgram: finalProdi,
+        bio: finalBio,
+        avatarUrl: effectiveAvatar,
+      });
+      setEditFullName(finalFullName);
+      setEditPhone(finalPhone || '');
+      setEditStudyProgram(finalProdi || '');
+      setEditBio(finalBio || '');
     } catch {
-      if (myOverride) {
+      if (myOverride || localExtra) {
         setProfile((prev) => ({
           ...prev,
-          fullName: myOverride.full_name || prev.fullName,
-          division: myOverride.division || prev.division,
-          role: myOverride.role || prev.role,
+          fullName: myOverride?.full_name || localExtra?.full_name || prev.fullName,
+          division: myOverride?.division || prev.division,
+          role: myOverride?.role || prev.role,
+          phone: localExtra?.phone || prev.phone,
+          studyProgram: localExtra?.study_program || prev.studyProgram,
+          bio: localExtra?.bio || prev.bio,
         }));
+        if (localExtra?.phone) setEditPhone(localExtra.phone);
+        if (localExtra?.study_program) setEditStudyProgram(localExtra.study_program);
+        if (localExtra?.bio) setEditBio(localExtra.bio);
       }
     }
   };
@@ -767,16 +840,74 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     }
 
     setIsSavingProfile(true);
+    const cleanNpm = normalizeStudentId(profile.npm || profile.nim || user.npm || user.nim);
+    const updatedData = {
+      full_name: editFullName.trim(),
+      phone: editPhone.trim() || null,
+      study_program: editStudyProgram.trim() || null,
+      bio: editBio.trim() || null,
+    };
+
     try {
-      if (!user.id.startsWith('demo-')) {
-        const { error } = await (supabase.from('profiles') as any).update({
+      // 1. Simpan ke local storage secara permanen (Primary Cache agar aman saat refresh)
+      try {
+        localStorage.setItem('simak_profile_extra_' + user.id, JSON.stringify(updatedData));
+        if (cleanNpm) {
+          localStorage.setItem('simak_profile_extra_' + cleanNpm, JSON.stringify(updatedData));
+        }
+
+        // Update whitelist overrides agar sinkron ke seluruh modul
+        const rawOv = localStorage.getItem('simak_whitelist_overrides');
+        let ovMap: Record<string, any> = {};
+        if (rawOv) ovMap = JSON.parse(rawOv);
+        ovMap[cleanNpm] = {
+          ...(ovMap[cleanNpm] || {}),
           full_name: editFullName.trim(),
           phone: editPhone.trim() || null,
           study_program: editStudyProgram.trim() || null,
           bio: editBio.trim() || null,
-        }).eq('id', user.id);
+        };
+        localStorage.setItem('simak_whitelist_overrides', JSON.stringify(ovMap));
 
-        if (error) throw error;
+        // Update session jika nama berubah
+        const rawSession = localStorage.getItem('simak_user_session');
+        if (rawSession) {
+          const sess = JSON.parse(rawSession);
+          sess.fullName = editFullName.trim();
+          localStorage.setItem('simak_user_session', JSON.stringify(sess));
+        }
+      } catch (lsErr) {
+        console.warn('Gagal menyimpan cache profil lokal:', lsErr);
+      }
+
+      // 2. Sinkronisasi ke Supabase jika bukan demo
+      if (!user.id.startsWith('demo-')) {
+        try {
+          // Update berdasarkan id
+          await (supabase.from('profiles') as any).update({
+            full_name: editFullName.trim(),
+            phone: editPhone.trim() || null,
+            study_program: editStudyProgram.trim() || null,
+            bio: editBio.trim() || null,
+          }).eq('id', user.id);
+
+          // Update juga berdasarkan npm jika ada
+          if (cleanNpm) {
+            await (supabase.from('profiles') as any).update({
+              full_name: editFullName.trim(),
+              phone: editPhone.trim() || null,
+              study_program: editStudyProgram.trim() || null,
+              bio: editBio.trim() || null,
+            }).or(`npm.eq.${cleanNpm},nim.eq.${cleanNpm}`);
+
+            // Update member_evaluations agar sinkron di leaderboard & rapor
+            await (supabase.from('member_evaluations') as any).update({
+              full_name: editFullName.trim(),
+            }).or(`user_id.eq.${user.id},npm.eq.${cleanNpm}`);
+          }
+        } catch (dbErr) {
+          console.warn('Supabase sync note:', dbErr);
+        }
       }
 
       setProfile((prev) => ({
@@ -787,7 +918,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         bio: editBio.trim() || null,
       }));
 
-      showToast('Profil Anda berhasil diperbarui!', 'success');
+      showToast('Profil Anda berhasil diperbarui dan tersimpan permanen!', 'success');
       setShowProfileModal(false);
       fetchProfile();
       fetchEvaluation();
@@ -1339,20 +1470,36 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
   // Toggle / Test Web Push Notification PWA
   const handleTogglePushNotification = async () => {
-    if (isPushEnabled) {
-      sendWebNotification('Pengingat SIMAK GENBI Aktif 🔔', {
-        body: 'Notifikasi presensi Anda aktif dan berjalan normal di perangkat ini.',
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      showToast('Browser ini belum mendukung Web Push Notification.', 'error');
+      return;
+    }
+
+    const currentPermission = Notification.permission;
+
+    if (currentPermission === 'denied') {
+      showToast('Izin notifikasi diblokir browser. Buka setelan browser / info situs untuk mengizinkan notifikasi.', 'error');
+      return;
+    }
+
+    if (currentPermission === 'granted') {
+      // Jika sudah diizinkan, kirimkan notifikasi tes ke PWA perangkat
+      await sendWebNotification('Pengingat SIMAK GENBI Aktif 🔔', {
+        body: 'Notifikasi presensi Anda aktif dan siap menerima jadwal kegiatan resmi.',
         icon: '/logo-genbi.png',
       });
-      showToast('Notifikasi PWA aktif! Tes notifikasi telah dikirim.', 'success');
+      setIsPushEnabled(true);
+      showToast('Notifikasi PWA aktif! Tes notifikasi telah dikirim ke perangkat Anda.', 'info');
+      return;
+    }
+
+    // Jika belum diizinkan (default), minta izin
+    const res = await requestNotificationPermission();
+    if (res.granted) {
+      setIsPushEnabled(true);
+      showToast('Notifikasi pengingat agenda resmi berhasil diaktifkan!', 'success');
     } else {
-      const res = await requestNotificationPermission();
-      if (res.granted) {
-        setIsPushEnabled(true);
-        showToast('Notifikasi pengingat agenda berhasil diaktifkan!', 'success');
-      } else {
-        showToast('Izin notifikasi tidak diizinkan oleh browser.', 'error');
-      }
+      showToast('Izin notifikasi tidak diizinkan oleh pengguna.', 'error');
     }
   };
 
@@ -2004,10 +2151,24 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="absolute bottom-10 left-1/4 w-96 h-96 rounded-full bg-cyan-400/10 blur-3xl" />
       </div>
 
-      {/* Floating Toast Notification */}
+      {/* Floating Toast Notification (Hijau = Sukses, Merah = Gagal/Error, Kuning = Info/Peringatan) */}
       {toast && (
-        <div className="fixed top-5 z-50 px-4 py-2.5 rounded-2xl bg-slate-900/90 text-white shadow-2xl backdrop-blur-md border border-white/20 flex items-center gap-2.5 text-xs font-semibold animate-in slide-in-from-top-4 duration-300">
-          <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+        <div
+          className={`fixed top-5 z-50 px-4 py-2.5 rounded-2xl shadow-2xl backdrop-blur-md border flex items-center gap-2.5 text-xs font-bold animate-in slide-in-from-top-4 duration-300 ${
+            toast.type === 'error'
+              ? 'bg-rose-600/95 text-white border-rose-400/50 shadow-rose-950/40'
+              : toast.type === 'info' || toast.type === 'warning'
+              ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-amber-950/30 font-extrabold'
+              : 'bg-emerald-600/95 text-white border-emerald-400/50 shadow-emerald-950/40'
+          }`}
+        >
+          {toast.type === 'error' ? (
+            <AlertCircle className="w-4 h-4 text-rose-100 shrink-0" />
+          ) : toast.type === 'info' || toast.type === 'warning' ? (
+            <Info className="w-4 h-4 text-slate-950 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-4 h-4 text-emerald-100 shrink-0" />
+          )}
           <span>{toast.message}</span>
         </div>
       )}
