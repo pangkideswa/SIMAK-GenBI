@@ -32,6 +32,7 @@ import {
   GraduationCap,
   Trophy,
   Crown,
+  Briefcase,
   Upload,
   Download,
   SlidersHorizontal,
@@ -68,6 +69,7 @@ import {
   purgeSuperAdminFromCache,
 } from '../lib/attendanceSync';
 import { MemberReportModal } from '../components/MemberReportModal';
+import { MubesAwardsMemberView } from '../components/MubesAwardsMemberView';
 import {
   enqueueOfflineAttendance,
   initOfflineQueueSync,
@@ -403,7 +405,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   });
 
   // Active Tab & Filter Leaderboard
-  const [activeTab, setActiveTab] = useState<'events' | 'history' | 'leaderboard' | 'kadiv-workspace' | 'tiers'>('events');
+  const [activeTab, setActiveTab] = useState<'events' | 'history' | 'leaderboard' | 'kadiv-workspace' | 'mubes-awards' | 'tiers'>('events');
   const [selectedLeaderboardDivision, setSelectedLeaderboardDivision] = useState<string>('Semua');
   const [leaderboardSortOrder, setLeaderboardSortOrder] = useState<'highest' | 'lowest'>('highest');
 
@@ -2323,8 +2325,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 BPH Komisariat
               </span>
             ) : profile.role === 'kadiv' ? (
-              <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-xs">
-                <Crown className="w-3.5 h-3.5 text-amber-200" />
+              <span className="hidden sm:inline-flex items-center px-3 py-1 rounded-full text-[11px] font-black bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-xs">
                 Kadiv {profile.division}
               </span>
             ) : (
@@ -2602,21 +2603,36 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       </p>
 
                       <div className="mt-1.5 flex justify-center">
-                        {profile.role === 'kadiv' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-amber-400 text-slate-950 font-black text-[9px] uppercase tracking-wider shadow-sm">
-                            <Crown className="w-2.5 h-2.5 text-slate-950" />
-                            Kepala Divisi
-                          </span>
-                        ) : profile.role === 'admin' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-blue-500 text-white font-black text-[9px] uppercase tracking-wider shadow-sm border border-blue-400/40">
-                            <ShieldCheck className="w-2.5 h-2.5 text-white" />
-                            BPH Komisariat
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-white/15 text-blue-100 font-bold text-[9px] uppercase tracking-wider border border-white/20">
-                            Anggota GenBI
-                          </span>
-                        )}
+                        {(() => {
+                          const jab = (profile as any).jabatan;
+                          if (jab) {
+                            return (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-white/20 text-white font-black text-[9px] uppercase tracking-wider shadow-sm border border-white/30">
+                                {jab}
+                              </span>
+                            );
+                          }
+                          if (profile.role === 'kadiv') {
+                            return (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-amber-400 text-slate-950 font-black text-[9px] uppercase tracking-wider shadow-sm">
+                                Kepala Divisi
+                              </span>
+                            );
+                          }
+                          if (profile.role === 'admin') {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-blue-500 text-white font-black text-[9px] uppercase tracking-wider shadow-sm border border-blue-400/40">
+                                <ShieldCheck className="w-2.5 h-2.5 text-white" />
+                                BPH Komisariat
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-white/15 text-blue-100 font-bold text-[9px] uppercase tracking-wider border border-white/20">
+                              Anggota GenBI
+                            </span>
+                          );
+                        })()}
                       </div>
 
                       {/* QR Code Presensi Resmi dalam Card Tile Putih */}
@@ -2951,10 +2967,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                           : 'text-amber-800 bg-amber-50 hover:bg-amber-100'
                       }`}
                     >
-                      <Crown className="w-3.5 h-3.5 text-amber-300" />
+                      <Briefcase className="w-3.5 h-3.5 text-amber-300" />
                       <span>Divisi Saya</span>
                     </button>
                   )}
+
+                  <button
+                    onClick={() => setActiveTab('mubes-awards')}
+                    className={`flex-1 min-w-[125px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                      activeTab === 'mubes-awards'
+                        ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-500/20'
+                        : 'text-amber-800 bg-amber-50 hover:bg-amber-100'
+                    }`}
+                  >
+                    <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Reward Mubes</span>
+                  </button>
 
                   <button
                     onClick={() => setActiveTab('tiers')}
@@ -3476,8 +3504,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                         </span>
                                       )}
                                       {member.role === 'kadiv' && (
-                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-extrabold">
-                                          <Crown className="w-2.5 h-2.5 text-amber-700" />
+                                        <span className="inline-flex items-center px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-extrabold">
                                           Kadiv
                                         </span>
                                       )}
@@ -3512,7 +3539,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-yellow-500/10 to-orange-500/10 border border-amber-300 flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
                         <div className="p-2.5 bg-amber-400 text-slate-950 rounded-xl shadow-xs">
-                          <Crown className="w-5 h-5" />
+                          <Briefcase className="w-5 h-5" />
                         </div>
                         <div>
                           <h4 className="text-xs sm:text-sm font-black text-slate-900">
@@ -3574,6 +3601,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                         })}
                     </div>
                   </div>
+                )}
+
+                {/* TAB KHUSUS REWARD MUBES & VOTING BPH */}
+                {activeTab === 'mubes-awards' && (
+                  <MubesAwardsMemberView
+                    currentUser={profile}
+                    bphMembers={leaderboard.filter((m) => {
+                      const jab = ((m as any).jabatan || '').toLowerCase();
+                      const div = (m.division || '').toLowerCase();
+                      const role = m.role || '';
+                      return role === 'admin' || div === 'bph' || jab.includes('bph') || jab === 'ketua' || jab === 'wakil ketua';
+                    })}
+                    onToast={showToast}
+                  />
                 )}
 
                 {/* TAB 5: PANDUAN TIER & SISTEM POIN */}
@@ -3653,7 +3694,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </main>
 
         {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
-        <Footer />
+        <Footer className="border-t border-slate-200/80 bg-white/70 backdrop-blur-md text-slate-700" />
       </div>
 
       {/* Modal ID QR Anggota (High-Res Digital Stamp) */}

@@ -11,10 +11,13 @@ import {
   CheckCircle2,
   X,
   KeyRound,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { verifyUserPin } from '../lib/authSecurity';
 import { SatelliteLoader } from '../components/SatelliteLoader';
+import { InteractiveLoginBackground } from '../components/InteractiveLoginBackground';
 import { Footer } from '../components/Footer';
 import type { Division, Role } from '../types/database';
 
@@ -31,6 +34,7 @@ interface LoginPageProps {
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
 
   // Form State Login (Tanpa Hardcoded Dummy)
   const [identifier, setIdentifier] = useState('');
@@ -494,8 +498,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  const isDark = themeMode === 'dark';
+
   return (
-    <div className="relative min-h-screen w-full flex flex-col justify-between items-center bg-slate-50 overflow-x-hidden p-4 sm:p-6">
+    <div className="relative min-h-screen w-full flex flex-col justify-between items-center bg-transparent overflow-x-hidden p-4 sm:p-6 transition-colors duration-500">
       {/* Loading Satelit Animasi */}
       {isLoading && (
         <SatelliteLoader
@@ -505,37 +511,85 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         />
       )}
 
-      {/* Ambient Mesh Gradient Background */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
-        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-blue-600/15 blur-3xl" />
-        <div className="absolute top-1/4 -right-32 w-96 h-96 rounded-full bg-indigo-500/15 blur-3xl" />
-        <div className="absolute -bottom-32 left-1/3 w-96 h-96 rounded-full bg-cyan-400/10 blur-3xl" />
+      {/* 21st.dev Inspired Interactive Cyber Constellation & Aurora Background (Day/Night) */}
+      <InteractiveLoginBackground theme={themeMode} />
+
+      {/* Tombol Icon Toggle Day / Night Mode di Pojok Kanan Atas */}
+      <div className="w-full max-w-md flex justify-end z-20 pt-2">
+        <button
+          type="button"
+          onClick={() => setThemeMode(isDark ? 'light' : 'dark')}
+          className={`w-9 h-9 rounded-full flex items-center justify-center transition-all cursor-pointer shadow-md border active:scale-95 ${
+            isDark
+              ? 'bg-slate-900/80 text-amber-300 border-amber-400/30 hover:bg-slate-800 hover:border-amber-400/60 shadow-amber-500/10'
+              : 'bg-white/90 text-indigo-600 border-slate-200 hover:bg-white hover:border-indigo-300 shadow-blue-500/10'
+          }`}
+          title={isDark ? 'Beralih ke Mode Terang (Day Mode)' : 'Beralih ke Mode Gelap (Night Mode)'}
+          aria-label="Toggle tema tampilan"
+        >
+          {isDark ? (
+            <Sun className="w-4 h-4 text-amber-400 fill-amber-400" />
+          ) : (
+            <Moon className="w-4 h-4 text-indigo-600 fill-indigo-600" />
+          )}
+        </button>
       </div>
 
-      <div className="w-full max-w-md my-auto pt-6 pb-4">
-        {/* Main Card Clean Glassmorphism */}
-        <div className="bg-white/85 backdrop-blur-xl border border-white ring-1 ring-slate-900/5 rounded-[32px] p-6 sm:p-8 shadow-2xl shadow-blue-900/10 transition-all">
+      <div className="w-full max-w-md my-auto pt-2 pb-2 relative z-10">
+        {/* Main Card Clean Glassmorphism Adaptif Day / Night */}
+        <div
+          className={`rounded-[32px] p-6 sm:p-8 shadow-2xl transition-all duration-300 ${
+            isDark
+              ? 'bg-slate-900/85 backdrop-blur-2xl border border-blue-500/30 ring-1 ring-blue-500/20 text-white shadow-blue-950/80'
+              : 'bg-white/95 backdrop-blur-2xl border border-white/80 ring-1 ring-slate-900/5 text-slate-900 shadow-blue-900/10'
+          }`}
+        >
           {/* Header Brand dengan Logo Resmi GenBI UNMA */}
           <div className="flex flex-col items-center text-center mb-6">
-            <div className="w-20 h-20 rounded-3xl bg-white p-2.5 shadow-xl shadow-blue-900/10 border border-slate-100 flex items-center justify-center mb-3">
-              <img
-                src="/logo-genbi.png"
-                alt="Logo GenBI UNMA"
-                className="w-full h-full object-contain"
+            <div className="relative group mb-3">
+              <div
+                className={`absolute -inset-1 rounded-3xl opacity-30 blur-md group-hover:opacity-60 transition ${
+                  isDark
+                    ? 'bg-gradient-to-r from-blue-500 to-cyan-500'
+                    : 'bg-gradient-to-r from-blue-600 to-indigo-600'
+                }`}
               />
+              <div
+                className={`relative w-20 h-20 rounded-3xl p-2.5 shadow-xl border flex items-center justify-center transition-colors ${
+                  isDark
+                    ? 'bg-slate-950 border-blue-500/30 shadow-blue-900/30'
+                    : 'bg-white border-slate-100 shadow-blue-900/10'
+                }`}
+              >
+                <img
+                  src="/logo-genbi.png"
+                  alt="Logo GenBI UNMA"
+                  className="w-full h-full object-contain"
+                />
+              </div>
             </div>
 
             <div className="space-y-1">
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-                <span className="text-slate-900">SIMAK</span>{' '}
-                <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-800 bg-clip-text text-transparent">
+              <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
+                <span className={isDark ? 'text-white' : 'text-slate-900'}>SIMAK</span>{' '}
+                <span
+                  className={
+                    isDark
+                      ? 'bg-gradient-to-r from-blue-400 via-cyan-400 to-indigo-300 bg-clip-text text-transparent'
+                      : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-800 bg-clip-text text-transparent'
+                  }
+                >
                   GENBI
                 </span>
               </h1>
-              <p className="text-xs sm:text-sm text-slate-500 font-medium">
+              <p className={`text-xs sm:text-sm font-medium ${isDark ? 'text-slate-300' : 'text-slate-500'}`}>
                 Sistem Informasi Manajemen & Keaktifan GenBI
               </p>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+              <p
+                className={`text-[10px] font-bold uppercase tracking-wider ${
+                  isDark ? 'text-cyan-300/80' : 'text-slate-400'
+                }`}
+              >
                 Komisariat Universitas Majalengka &bull; KPw BI Cirebon
               </p>
             </div>
@@ -577,7 +631,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             /* FORM LOGIN */
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                <label
+                  className={`text-xs font-bold uppercase tracking-wider ${
+                    isDark ? 'text-slate-300' : 'text-slate-600'
+                  }`}
+                >
                   NPM atau Email Terdaftar
                 </label>
                 <div className="relative">
@@ -590,14 +648,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     placeholder="Masukkan NPM atau email..."
-                    className="w-full pl-11 pr-4 py-3 bg-white/70 border border-slate-200 rounded-2xl text-sm font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/30 focus:border-blue-600 transition"
+                    className={`w-full pl-11 pr-4 py-3 rounded-2xl text-sm font-medium transition focus:outline-none focus:ring-2 ${
+                      isDark
+                        ? 'bg-slate-950/70 border border-slate-700/80 text-white placeholder-slate-500 focus:ring-blue-500/40 focus:border-blue-400'
+                        : 'bg-white/90 border border-slate-200 text-slate-900 placeholder-slate-400 focus:ring-blue-600/30 focus:border-blue-600 shadow-xs'
+                    }`}
                   />
                 </div>
               </div>
 
               <div className="space-y-1.5">
                 <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                  <label
+                    className={`text-xs font-bold uppercase tracking-wider ${
+                      isDark ? 'text-slate-300' : 'text-slate-600'
+                    }`}
+                  >
                     PIN / Password
                   </label>
                   <button
@@ -608,7 +674,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                       setForgotSuccess('');
                       setShowForgotModal(true);
                     }}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+                    className={`text-xs font-semibold hover:underline cursor-pointer ${
+                      isDark ? 'text-cyan-400 hover:text-cyan-300' : 'text-blue-600 hover:text-blue-700'
+                    }`}
                   >
                     Lupa PIN?
                   </button>
@@ -623,12 +691,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     value={pin}
                     onChange={(e) => setPin(e.target.value)}
                     placeholder="Masukkan Password / PIN"
-                    className="w-full pl-11 pr-11 py-3 bg-white/70 border border-slate-200 rounded-2xl text-sm font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600/30 focus:border-blue-600 transition"
+                    className={`w-full pl-11 pr-11 py-3 rounded-2xl text-sm font-medium transition focus:outline-none focus:ring-2 ${
+                      isDark
+                        ? 'bg-slate-950/70 border border-slate-700/80 text-white placeholder-slate-500 focus:ring-blue-500/40 focus:border-blue-400'
+                        : 'bg-white/90 border border-slate-200 text-slate-900 placeholder-slate-400 focus:ring-blue-600/30 focus:border-blue-600 shadow-xs'
+                    }`}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPin(!showPin)}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 transition cursor-pointer"
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-200 transition cursor-pointer"
                   >
                     {showPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
@@ -638,7 +710,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full mt-2 py-3.5 px-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 active:scale-[0.98] text-white text-sm font-bold rounded-2xl shadow-lg shadow-blue-600/25 transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
+                className={`w-full mt-2 py-3.5 px-4 text-white text-sm font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer active:scale-[0.98] ${
+                  isDark
+                    ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-blue-600/30'
+                    : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-800 shadow-blue-600/25'
+                }`}
               >
                 {isLoading ? (
                   <>
@@ -659,41 +735,73 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                   <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
                     Akses Cepat Pengujian (1-Klik Masuk)
                   </span>
-                  <span className="text-[10px] font-semibold text-blue-600">PIN: genbi123</span>
+                  <span className={`text-[10px] font-semibold ${isDark ? 'text-cyan-400' : 'text-blue-600'}`}>
+                    PIN: genbi123
+                  </span>
                 </div>
                 <div className="grid grid-cols-3 gap-1.5">
                   <button
                     type="button"
                     onClick={() => handleQuickDemoLogin('admin')}
-                    className="p-2.5 rounded-2xl bg-indigo-50/70 hover:bg-indigo-100/90 active:scale-95 text-slate-700 text-[10px] font-bold border border-indigo-200/80 transition-all text-center cursor-pointer shadow-xs group"
+                    className={`p-2.5 rounded-2xl active:scale-95 text-[10px] font-bold transition-all text-center cursor-pointer shadow-xs group border ${
+                      isDark
+                        ? 'bg-slate-950/70 hover:bg-slate-900 border-indigo-500/30 text-slate-200'
+                        : 'bg-indigo-50/80 hover:bg-indigo-100 border-indigo-200 text-slate-700'
+                    }`}
                     title="Masuk langsung sebagai Pengurus BPH"
                   >
-                    <span className="block font-black text-indigo-700 group-hover:scale-105 transition-transform">
+                    <span
+                      className={`block font-black transition-transform group-hover:scale-105 ${
+                        isDark ? 'text-indigo-300' : 'text-indigo-700'
+                      }`}
+                    >
                       🛡️ BPH
                     </span>
-                    <span className="text-slate-600 text-[9px] block">Pangki Deswa</span>
+                    <span className={`text-[9px] block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                      Pangki Deswa
+                    </span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleQuickDemoLogin('kadiv')}
-                    className="p-2.5 rounded-2xl bg-amber-50/70 hover:bg-amber-100/90 active:scale-95 text-slate-700 text-[10px] font-bold border border-amber-200/80 transition-all text-center cursor-pointer shadow-xs group"
+                    className={`p-2.5 rounded-2xl active:scale-95 text-[10px] font-bold transition-all text-center cursor-pointer shadow-xs group border ${
+                      isDark
+                        ? 'bg-slate-950/70 hover:bg-slate-900 border-amber-500/30 text-slate-200'
+                        : 'bg-amber-50/80 hover:bg-amber-100 border-amber-200 text-slate-700'
+                    }`}
                     title="Masuk langsung sebagai Kepala Divisi"
                   >
-                    <span className="block font-black text-amber-700 group-hover:scale-105 transition-transform">
-                      ⭐ Kadiv
+                    <span
+                      className={`block font-black transition-transform group-hover:scale-105 ${
+                        isDark ? 'text-amber-300' : 'text-amber-700'
+                      }`}
+                    >
+                      Kepala Divisi
                     </span>
-                    <span className="text-slate-600 text-[9px] block">Deden (Kominfo)</span>
+                    <span className={`text-[9px] block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                      Deden (Kominfo)
+                    </span>
                   </button>
                   <button
                     type="button"
                     onClick={() => handleQuickDemoLogin('member')}
-                    className="p-2.5 rounded-2xl bg-blue-50/70 hover:bg-blue-100/90 active:scale-95 text-slate-700 text-[10px] font-bold border border-blue-200/80 transition-all text-center cursor-pointer shadow-xs group"
+                    className={`p-2.5 rounded-2xl active:scale-95 text-[10px] font-bold transition-all text-center cursor-pointer shadow-xs group border ${
+                      isDark
+                        ? 'bg-slate-950/70 hover:bg-slate-900 border-blue-500/30 text-slate-200'
+                        : 'bg-blue-50/80 hover:bg-blue-100 border-blue-200 text-slate-700'
+                    }`}
                     title="Masuk langsung sebagai Anggota Penerima Beasiswa"
                   >
-                    <span className="block font-black text-blue-700 group-hover:scale-105 transition-transform">
+                    <span
+                      className={`block font-black transition-transform group-hover:scale-105 ${
+                        isDark ? 'text-cyan-300' : 'text-blue-700'
+                      }`}
+                    >
                       👤 Anggota
                     </span>
-                    <span className="text-slate-600 text-[9px] block">Anisa</span>
+                    <span className={`text-[9px] block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                      Anisa
+                    </span>
                   </button>
                 </div>
               </div>
@@ -825,9 +933,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           )}
 
           {/* Toggle Login / Register */}
-          <div className="mt-5 pt-4 border-t border-slate-100 text-center">
+          <div className="mt-5 pt-4 border-t border-slate-800 text-center">
             {!isRegisterMode ? (
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-400">
                 Penerima beasiswa baru?{' '}
                 <button
                   type="button"
@@ -836,13 +944,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     setErrorMessage('');
                     setSuccessMessage('');
                   }}
-                  className="font-bold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+                  className="font-bold text-cyan-400 hover:text-cyan-300 hover:underline cursor-pointer"
                 >
                   Aktivasi Akun SIMAK
                 </button>
               </p>
             ) : (
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-400">
                 Sudah memiliki akun terdaftar?{' '}
                 <button
                   type="button"
@@ -851,7 +959,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                     setErrorMessage('');
                     setSuccessMessage('');
                   }}
-                  className="font-bold text-blue-600 hover:text-blue-700 hover:underline cursor-pointer"
+                  className="font-bold text-cyan-400 hover:text-cyan-300 hover:underline cursor-pointer"
                 >
                   Masuk Kembali
                 </button>
@@ -862,7 +970,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       </div>
 
       {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
-      <Footer className="border-t-0 bg-transparent py-4" />
+      <Footer className="border-t-0 bg-transparent py-4 text-slate-400" />
 
       {/* Modal Dialog Lupa PIN / Reset Password */}
       {showForgotModal && (

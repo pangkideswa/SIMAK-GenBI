@@ -430,33 +430,59 @@ export function applyEvaluationsOverrides(
   purgeSuperAdminFromCache();
 
   let overrides: Record<string, any> = {};
+  let whitelistOverrides: Record<string, any> = {};
+
   try {
     const rawOv = localStorage.getItem(EVALUATIONS_OVERRIDES_KEY);
     if (rawOv) overrides = JSON.parse(rawOv);
+  } catch {}
+
+  try {
+    const rawWl = localStorage.getItem('simak_whitelist_overrides');
+    if (rawWl) whitelistOverrides = JSON.parse(rawWl);
   } catch {}
 
   const merged = baseList
     .filter((item) => !isSuperAdminAccount(item))
     .map((item) => {
       const cleanId = normalizeStudentId(item.npm || item.nim);
+      const wl = whitelistOverrides[cleanId];
       const ov = overrides[cleanId] || overrides[item.user_id];
       const effectiveAvatar = resolveAvatarUrl(item) || resolveAvatarUrl(ov);
-      if (ov) {
-        return {
-          ...item,
-          avatar_url: effectiveAvatar,
-          total_points: ov.total_points ?? item.total_points,
-          total_hadir: ov.total_hadir ?? item.total_hadir,
-          total_izin: ov.total_izin ?? item.total_izin,
-          total_alfa: ov.total_alfa ?? item.total_alfa,
-          attendance_percentage: ov.attendance_percentage ?? item.attendance_percentage,
-          predicate: ov.predicate ?? item.predicate,
-        };
-      }
-      return {
+
+      let updated: MemberEvaluation = {
         ...item,
         avatar_url: effectiveAvatar,
       };
+
+      // 1. Terapkan sinkronisasi Divisi, Role, Jabatan, dan Nama dari Whitelist SK / Super Admin
+      if (wl) {
+        updated = {
+          ...updated,
+          full_name: wl.full_name || updated.full_name,
+          division: wl.division || updated.division,
+          role: wl.role || updated.role,
+          ...((wl.jabatan ? { jabatan: wl.jabatan } : {}) as any),
+        };
+      }
+
+      // 2. Terapkan evaluasi overrides (poin, kehadiran, dll)
+      if (ov) {
+        updated = {
+          ...updated,
+          total_points: ov.total_points ?? updated.total_points,
+          total_hadir: ov.total_hadir ?? updated.total_hadir,
+          total_izin: ov.total_izin ?? updated.total_izin,
+          total_alfa: ov.total_alfa ?? updated.total_alfa,
+          attendance_percentage: ov.attendance_percentage ?? updated.attendance_percentage,
+          predicate: ov.predicate ?? updated.predicate,
+          ...(ov.full_name ? { full_name: ov.full_name } : {}),
+          ...(ov.division ? { division: ov.division } : {}),
+          ...(ov.role ? { role: ov.role } : {}),
+          ...((ov.jabatan ? { jabatan: ov.jabatan } : {}) as any),
+        };
+      }
+      return updated;
     });
 
   // Tambahkan juga jika ada user override yang belum ada di baseList (kecuali Super Admin)

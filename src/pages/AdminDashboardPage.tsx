@@ -43,7 +43,14 @@ import { syncMemberUpdate, normalizeStudentId } from '../lib/memberSync';
 import { formatDateTimeWIB, toDatetimeLocalWIB } from '../lib/dateUtils';
 import { WibDateTimePicker } from '../components/WibDateTimePicker';
 import { MemberReportModal } from '../components/MemberReportModal';
+import { MubesAwardsManager } from '../components/MubesAwardsManager';
 import { recordAuditLog } from '../lib/auditLog';
+import {
+  resolveUserJabatan,
+  getMasterJabatanList,
+  getMasterDivisions,
+  MasterJabatan,
+} from '../lib/roleMaster';
 import {
   isPushNotificationEnabled,
   requestNotificationPermission,
@@ -201,8 +208,8 @@ const DEFAULT_SAMPLE_LEADERBOARD: MemberEvaluation[] = [
     nim: '2414101078',
     email: 'admin@genbi-unma.ac.id',
     full_name: 'Pangki Deswa Rayhandi',
-    division: 'BPH',
-    role: 'admin',
+    division: 'Pengabdian Masyarakat',
+    role: 'member',
     avatar_url: null,
     total_points: 95,
     total_hadir: 7,
@@ -302,7 +309,7 @@ const DEFAULT_SAMPLE_WHITELIST: Array<{
   is_claimed: boolean;
   created_at: string;
 }> = [
-  { npm: '2414101078', nim: '2414101078', full_name: 'Pangki Deswa Rayhandi', division: 'BPH', role: 'admin', is_claimed: true, created_at: new Date().toISOString() },
+  { npm: '2414101078', nim: '2414101078', full_name: 'Pangki Deswa Rayhandi', division: 'Pengabdian Masyarakat', role: 'member', is_claimed: true, created_at: new Date().toISOString() },
   { npm: '2214100010', nim: '2214100010', full_name: 'Deden Kurniawan', division: 'Publikasi dan Sosialisasi', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
   { npm: '2214100025', nim: '2214100025', full_name: 'Siti Rahmawati', division: 'Pendidikan', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
   { npm: '2214100033', nim: '2214100033', full_name: 'Fajar Pratama', division: 'Lingkungan Hidup', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
@@ -332,7 +339,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   onLogout,
   onSwitchToMemberView,
 }) => {
-  const [activeTab, setActiveTab] = useState<'events' | 'verification' | 'leaderboard' | 'whitelist'>('events');
+  const [activeTab, setActiveTab] = useState<'events' | 'verification' | 'leaderboard' | 'whitelist' | 'mubes-awards'>('events');
 
   // Floating Toast Notification State
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' | 'warning' } | null>(null);
@@ -413,6 +420,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     full_name: string;
     division: Division;
     role: Role;
+    jabatan?: string;
     is_claimed: boolean;
     created_at: string;
   }>>([]);
@@ -420,9 +428,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [showAddWhitelistModal, setShowAddWhitelistModal] = useState(false);
   const [whiteNpm, setWhiteNpm] = useState('');
   const [whiteFullName, setWhiteFullName] = useState('');
-  const [whiteDivision, setWhiteDivision] = useState<Division>('Publikasi dan Sosialisasi');
+  const [whiteDivision, setWhiteDivision] = useState<string>('Publikasi dan Sosialisasi');
   const [whiteRole, setWhiteRole] = useState<Role>('member');
+  const [whiteJabatan, setWhiteJabatan] = useState<string>('Anggota');
   const [isSavingWhitelist, setIsSavingWhitelist] = useState(false);
+
+  // Master Jabatan & Divisi State
+  const [masterJabatanList, setMasterJabatanList] = useState<MasterJabatan[]>(getMasterJabatanList());
+  const [masterDivisionsList, setMasterDivisionsList] = useState<string[]>(getMasterDivisions());
 
   // Edit Whitelist Member State
   const [showEditWhitelistModal, setShowEditWhitelistModal] = useState(false);
@@ -432,11 +445,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     full_name: string;
     division: Division;
     role: Role;
+    jabatan?: string;
     is_claimed: boolean;
   } | null>(null);
   const [editWhiteFullName, setEditWhiteFullName] = useState('');
-  const [editWhiteDivision, setEditWhiteDivision] = useState<Division>('Publikasi dan Sosialisasi');
+  const [editWhiteDivision, setEditWhiteDivision] = useState<string>('Publikasi dan Sosialisasi');
   const [editWhiteRole, setEditWhiteRole] = useState<Role>('member');
+  const [editWhiteJabatan, setEditWhiteJabatan] = useState<string>('Anggota');
   const [isUpdatingWhitelist, setIsUpdatingWhitelist] = useState(false);
 
   // Fetch Data Awal Asli Supabase
@@ -755,8 +770,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         npm: whiteNpm.trim(),
         nim: whiteNpm.trim(),
         full_name: whiteFullName.trim(),
-        division: whiteDivision,
+        division: whiteDivision as Division,
         role: whiteRole,
+        jabatan: whiteJabatan,
         is_claimed: false,
         created_at: new Date().toISOString(),
       };
@@ -766,8 +782,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setWhiteFullName('');
       setWhiteDivision('Publikasi dan Sosialisasi');
       setWhiteRole('member');
+      setWhiteJabatan('Anggota');
       setIsSavingWhitelist(false);
-      showToast(`Sukses menambahkan ${whiteFullName} (${whiteRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'}) ke SK Whitelist!`, 'success');
+      showToast(`Sukses menambahkan ${whiteFullName} (${whiteJabatan || whiteRole}) ke SK Whitelist!`, 'success');
       return;
     }
     try {
@@ -787,12 +804,21 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         throw error;
       }
 
-      showToast(`Sukses menambahkan ${whiteFullName} (${whiteRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'}) ke SK Whitelist!`, 'success');
+      await syncMemberUpdate({
+        npm: whiteNpm.trim(),
+        fullName: whiteFullName.trim(),
+        division: whiteDivision,
+        role: whiteRole,
+        jabatan: whiteJabatan,
+      });
+
+      showToast(`Sukses menambahkan ${whiteFullName} (${whiteJabatan || whiteRole}) ke SK Whitelist!`, 'success');
       setShowAddWhitelistModal(false);
       setWhiteNpm('');
       setWhiteFullName('');
       setWhiteDivision('Publikasi dan Sosialisasi');
       setWhiteRole('member');
+      setWhiteJabatan('Anggota');
       loadWhitelistMembers();
     } catch (err: any) {
       showToast(err.message || 'Gagal menambahkan anggota ke SK Whitelist.', 'error');
@@ -1029,6 +1055,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               full_name: detail.full_name || m.full_name,
               division: detail.division || m.division,
               role: detail.role || m.role,
+              jabatan: detail.jabatan !== undefined ? detail.jabatan : m.jabatan,
             };
           }
           return m;
@@ -1043,11 +1070,20 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               full_name: detail.full_name || ev.full_name,
               division: detail.division || ev.division,
               role: detail.role || ev.role,
+              jabatan: detail.jabatan !== undefined ? detail.jabatan : (ev as any).jabatan,
             };
           }
           return ev;
         })
       );
+    };
+
+    const handleJabatanSync = () => {
+      setMasterJabatanList(getMasterJabatanList());
+    };
+
+    const handleDivisionSync = () => {
+      setMasterDivisionsList(getMasterDivisions());
     };
 
     // Listener Event Sync & Attendance Sync
@@ -1126,6 +1162,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     window.addEventListener('simak_evaluations_sync', handleAttSubmitted);
     window.addEventListener('simak_period_sync', handlePeriodSync);
     window.addEventListener('simak_avatar_updated', handleAvatarUpdated);
+    window.addEventListener('simak_jabatan_sync', handleJabatanSync);
+    window.addEventListener('simak_division_sync', handleDivisionSync);
 
     return () => {
       window.removeEventListener('simak_member_sync', handleSyncEvent);
@@ -1138,6 +1176,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       window.removeEventListener('simak_evaluations_sync', handleAttSubmitted);
       window.removeEventListener('simak_period_sync', handlePeriodSync);
       window.removeEventListener('simak_avatar_updated', handleAvatarUpdated);
+      window.removeEventListener('simak_jabatan_sync', handleJabatanSync);
+      window.removeEventListener('simak_division_sync', handleDivisionSync);
     };
   }, []);
 
@@ -1499,12 +1539,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     full_name: string;
     division: Division;
     role: Role;
+    jabatan?: string;
     is_claimed: boolean;
   }) => {
     setEditingWhitelist(item);
     setEditWhiteFullName(item.full_name);
     setEditWhiteDivision(item.division);
     setEditWhiteRole(item.role);
+    setEditWhiteJabatan(item.jabatan || resolveUserJabatan(item));
     setShowEditWhitelistModal(true);
   };
 
@@ -1520,8 +1562,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     const cleanTargetId = normalizeStudentId(editingWhitelist.npm || editingWhitelist.nim);
     const updatedPayload = {
       full_name: editWhiteFullName.trim(),
-      division: editWhiteDivision,
+      division: editWhiteDivision as Division,
       role: editWhiteRole,
+      jabatan: editWhiteJabatan,
     };
 
     // 1. Perbarui state whitelist secara instan di UI
@@ -1546,8 +1589,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           return {
             ...ev,
             full_name: editWhiteFullName.trim(),
-            division: editWhiteDivision,
+            division: editWhiteDivision as Division,
             role: editWhiteRole,
+            jabatan: editWhiteJabatan,
           };
         }
         return ev;
@@ -1561,12 +1605,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       fullName: editWhiteFullName.trim(),
       division: editWhiteDivision,
       role: editWhiteRole,
+      jabatan: editWhiteJabatan,
     });
 
     setShowEditWhitelistModal(false);
     setEditingWhitelist(null);
     setIsUpdatingWhitelist(false);
-    showToast(`Data SK untuk ${editWhiteFullName} berhasil diperbarui & disinkronkan ke seluruh sistem!`, 'success');
+    showToast(`Data SK untuk ${editWhiteFullName} (${editWhiteJabatan}) berhasil diperbarui & disinkronkan ke seluruh sistem!`, 'success');
   };
 
   // Hapus / Batalkan Pengajuan Izin
@@ -1927,9 +1972,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
       <div className="w-full max-w-7xl min-h-screen flex flex-col pb-20">
         {/* Sticky Header BPH */}
-        <header className="sticky top-0 z-30 px-3 sm:px-8 py-3 sm:py-4 bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-white p-1 shadow-xs border border-slate-200 flex items-center justify-center shrink-0">
+        <header className="sticky top-0 z-30 px-3 sm:px-8 py-2.5 sm:py-4 bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-white p-1 shadow-xs border border-slate-200 flex items-center justify-center shrink-0">
               <img
                 src="/logo-genbi.png"
                 alt="Logo GenBI UNMA"
@@ -1938,11 +1983,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="font-black text-base sm:text-lg tracking-tight text-slate-900">SIMAK</span>
-                <span className="font-black text-base sm:text-lg tracking-tight bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                <span className="font-black text-sm sm:text-lg tracking-tight text-slate-900">SIMAK</span>
+                <span className="font-black text-sm sm:text-lg tracking-tight bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                   GENBI
                 </span>
-                <span className="px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-700 font-black text-[10px] tracking-wider border border-blue-200">
+                <span className="px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-700 font-black text-[9px] sm:text-[10px] tracking-wider border border-blue-200">
                   BPH
                 </span>
               </div>
@@ -1952,7 +1997,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2.5">
+          <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
             {/* Tombol Lonceng Notifikasi PWA */}
             <button
               onClick={handleTogglePushNotification}
@@ -1970,12 +2015,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             {onSwitchToMemberView && (
               <button
                 onClick={onSwitchToMemberView}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition cursor-pointer"
+                className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
                 title="Lihat Tampilan Anggota"
               >
                 <Users className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">Tampilan Anggota</span>
-                <span className="sm:hidden text-[11px] font-bold">Anggota</span>
+                <span className="hidden md:inline">Tampilan Anggota</span>
               </button>
             )}
             <div className="hidden lg:flex flex-col text-right">
@@ -2203,6 +2247,18 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             >
               <Users className="w-4 h-4" />
               <span>Whitelist SK Anggota ({whitelistMembers.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('mubes-awards')}
+              className={`flex-1 min-w-[170px] py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition cursor-pointer ${
+                activeTab === 'mubes-awards'
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-500/20'
+                  : 'text-amber-800 bg-amber-50 hover:bg-amber-100'
+              }`}
+            >
+              <Award className="w-4 h-4 text-amber-500" />
+              <span>🏆 Reward Mubes (8 Penghargaan)</span>
             </button>
           </div>
 
@@ -2651,8 +2707,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                     <div className="flex items-center gap-1.5">
                                       <span className="font-extrabold text-slate-900 block truncate">{m.full_name}</span>
                                       {m.role === 'kadiv' && (
-                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-black shrink-0">
-                                          <Crown className="w-2.5 h-2.5 text-amber-700" />
+                                        <span className="inline-flex items-center px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-black shrink-0">
                                           Kadiv
                                         </span>
                                       )}
@@ -2765,7 +2820,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             {evaluations[1].full_name}
                           </h4>
                           <p className="text-[11px] text-slate-500 font-medium">
-                            {evaluations[1].division} &bull; {evaluations[1].role === 'admin' ? 'BPH' : evaluations[1].role === 'kadiv' ? 'Kadiv' : 'Anggota'}
+                            {evaluations[1].division} &bull; {resolveUserJabatan(evaluations[1])}
                           </p>
                         </div>
                         <div className="w-full py-2 px-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-around text-xs">
@@ -2814,7 +2869,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             {evaluations[0].full_name}
                           </h4>
                           <p className="text-xs text-amber-700 font-bold">
-                            {evaluations[0].division} &bull; {evaluations[0].role === 'admin' ? 'BPH' : evaluations[0].role === 'kadiv' ? 'Kepala Divisi' : 'Anggota'}
+                            {evaluations[0].division} &bull; {resolveUserJabatan(evaluations[0])}
                           </p>
                         </div>
                         <div className="w-full py-2.5 px-4 rounded-2xl bg-amber-50/80 border border-amber-200/80 flex items-center justify-around text-xs">
@@ -2861,7 +2916,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             {evaluations[2].full_name}
                           </h4>
                           <p className="text-[11px] text-slate-500 font-medium">
-                            {evaluations[2].division} &bull; {evaluations[2].role === 'admin' ? 'BPH' : evaluations[2].role === 'kadiv' ? 'Kadiv' : 'Anggota'}
+                            {evaluations[2].division} &bull; {resolveUserJabatan(evaluations[2])}
                           </p>
                         </div>
                         <div className="w-full py-2 px-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-around text-xs">
@@ -2997,7 +3052,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             <td className="py-3.5 px-4">
                               <span className="text-slate-700 font-semibold">{ev.division}</span>
                               <span className="text-[10px] text-slate-400 block font-medium">
-                                {ev.role === 'admin' ? 'BPH' : ev.role === 'kadiv' ? 'Kepala Divisi' : 'Anggota'}
+                                {resolveUserJabatan(ev)}
                               </span>
                             </td>
 
@@ -3124,20 +3179,58 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             <td className="py-3.5 px-4 font-extrabold text-slate-900">{w.full_name}</td>
                             <td className="py-3.5 px-4 font-medium text-slate-600">{w.division}</td>
                             <td className="py-3.5 px-4 text-center">
-                              {w.role === 'kadiv' ? (
-                                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-300 text-[10px] font-black shadow-xs">
-                                  <Crown className="w-3 h-3 text-amber-600" />
-                                  <span>Kepala Divisi</span>
-                                </span>
-                              ) : w.role === 'admin' ? (
-                                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-black">
-                                  <span>BPH</span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">
-                                  <span>Anggota</span>
-                                </span>
-                              )}
+                              {(() => {
+                                const jab = (w as any).jabatan || resolveUserJabatan(w);
+                                if (jab === 'Ketua') {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-300 text-[10px] font-black shadow-xs">
+                                      <Crown className="w-3 h-3 text-amber-600" />
+                                      <span>Ketua</span>
+                                    </span>
+                                  );
+                                }
+                                if (jab === 'Wakil Ketua') {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-50 text-indigo-900 border border-indigo-200 text-[10px] font-black shadow-xs">
+                                      <Shield className="w-3 h-3 text-indigo-600" />
+                                      <span>Wakil Ketua</span>
+                                    </span>
+                                  );
+                                }
+                                if (jab.toLowerCase().includes('sekretaris')) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-50 text-blue-900 border border-blue-200 text-[10px] font-black">
+                                      <span>{jab}</span>
+                                    </span>
+                                  );
+                                }
+                                if (jab.toLowerCase().includes('bendahara')) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-900 border border-emerald-200 text-[10px] font-black">
+                                      <span>{jab}</span>
+                                    </span>
+                                  );
+                                }
+                                if (w.role === 'kadiv' || jab.toLowerCase().includes('kepala divisi')) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-300 text-[10px] font-black shadow-xs">
+                                      <span>{jab}</span>
+                                    </span>
+                                  );
+                                }
+                                if (w.role === 'admin') {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-black">
+                                      <span>{jab || 'BPH'}</span>
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold">
+                                    <span>{jab || 'Anggota'}</span>
+                                  </span>
+                                );
+                              })()}
                             </td>
                             <td className="py-3.5 px-4 text-center">
                               {w.is_claimed ? (
@@ -3178,10 +3271,20 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               )}
             </div>
           )}
+
+          {/* TAB 4: PENGHARGAAN TAHUNAN & REWARD MUBES (8 KATEGORI) */}
+          {activeTab === 'mubes-awards' && (
+            <MubesAwardsManager
+              currentUser={user}
+              members={evaluations.length > 0 ? evaluations : whitelistMembers}
+              events={events}
+              onToast={showToast}
+            />
+          )}
         </main>
 
         {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
-        <Footer />
+        <Footer className="border-t border-slate-200/80 bg-white/70 backdrop-blur-md text-slate-700" />
       </div>
 
       {/* Modal Buat Acara Baru */}
@@ -3197,7 +3300,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
             <div>
               <h3 className="text-base font-black text-slate-900">Buat Sesi Kegiatan Baru</h3>
-              <p className="text-xs text-slate-500">Generate token presensi QR resmi untuk agenda GenBI</p>
             </div>
 
             <form onSubmit={handleCreateEvent} className="space-y-3.5 text-left">
@@ -3272,14 +3374,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-blue-600 shrink-0" />
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block leading-tight">
-                        Wajib Presensi di Lokasi (GPS)
-                      </span>
-                      <span className="text-[10px] text-slate-500">
-                        Cegah titip presensi dari luar area Kampus UNMA
-                      </span>
-                    </div>
+                    <span className="text-xs font-bold text-slate-900">
+                      Wajib Presensi di Lokasi (GPS UNMA)
+                    </span>
                   </div>
                   <input
                     type="checkbox"
@@ -3713,33 +3810,69 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-slate-600 uppercase">Divisi</label>
                   <select
                     value={whiteDivision}
-                    onChange={(e) => setWhiteDivision(e.target.value as Division)}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/30 focus:outline-none bg-white"
+                    onChange={(e) => {
+                      const div = e.target.value;
+                      setWhiteDivision(div);
+                      if (div === 'BPH') {
+                        setWhiteRole('admin');
+                        setWhiteJabatan('Ketua');
+                      } else if (div === 'Belum Ada Divisi') {
+                        setWhiteRole('member');
+                        setWhiteJabatan('Penerima Beasiswa Baru');
+                      } else {
+                        setWhiteRole('member');
+                        setWhiteJabatan('Anggota');
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/30 focus:outline-none bg-white font-medium"
                   >
-                    <option value="Publikasi dan Sosialisasi">Publikasi dan Sosialisasi</option>
-                    <option value="Lingkungan Hidup">Lingkungan Hidup</option>
-                    <option value="Pendidikan">Pendidikan</option>
-                    <option value="Pengabdian Masyarakat">Pengabdian Masyarakat</option>
-                    <option value="Kewirausahaan">Kewirausahaan</option>
-                    <option value="BPH">BPH</option>
+                    {masterDivisionsList.map((div) => (
+                      <option key={div} value={div}>
+                        {div}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-slate-600 uppercase">Jabatan / Role</label>
                   <select
-                    value={whiteRole}
-                    onChange={(e) => setWhiteRole(e.target.value as Role)}
+                    value={whiteJabatan}
+                    onChange={(e) => {
+                      const jabName = e.target.value;
+                      setWhiteJabatan(jabName);
+                      const matched = masterJabatanList.find((j) => j.name === jabName);
+                      if (matched) {
+                        setWhiteRole(matched.role);
+                        if (matched.division && matched.division !== 'all' && matched.division !== 'Belum Ada Divisi') {
+                          setWhiteDivision(matched.division);
+                        }
+                      }
+                    }}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/30 focus:outline-none bg-white font-bold"
                   >
-                    <option value="member">Anggota</option>
-                    <option value="kadiv">⭐ Kepala Divisi (Kadiv)</option>
-                    <option value="admin">🛡️ BPH</option>
+                    {whiteDivision === 'BPH' ? (
+                      masterJabatanList
+                        .filter((j) => j.division === 'BPH' || j.role === 'admin')
+                        .map((j) => (
+                          <option key={j.id} value={j.name}>
+                            {j.name}
+                          </option>
+                        ))
+                    ) : (
+                      masterJabatanList
+                        .filter((j) => j.division !== 'BPH')
+                        .map((j) => (
+                          <option key={j.id} value={j.name}>
+                            {j.name}
+                          </option>
+                        ))
+                    )}
                   </select>
                 </div>
               </div>
@@ -3806,33 +3939,73 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-slate-600 uppercase">Divisi</label>
                   <select
                     value={editWhiteDivision}
-                    onChange={(e) => setEditWhiteDivision(e.target.value as Division)}
+                    onChange={(e) => {
+                      const div = e.target.value;
+                      setEditWhiteDivision(div);
+                      if (div === 'BPH') {
+                        setEditWhiteRole('admin');
+                        if (!editWhiteJabatan || editWhiteJabatan === 'Anggota' || editWhiteJabatan === 'Kepala Divisi') {
+                          setEditWhiteJabatan('Ketua');
+                        }
+                      } else if (div === 'Belum Ada Divisi') {
+                        setEditWhiteRole('member');
+                        setEditWhiteJabatan('Penerima Beasiswa Baru');
+                      } else {
+                        if (editWhiteRole === 'admin') {
+                          setEditWhiteRole('member');
+                          setEditWhiteJabatan('Anggota');
+                        }
+                      }
+                    }}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/30 focus:outline-none bg-white font-medium"
                   >
-                    <option value="Publikasi dan Sosialisasi">Publikasi dan Sosialisasi</option>
-                    <option value="Lingkungan Hidup">Lingkungan Hidup</option>
-                    <option value="Pendidikan">Pendidikan</option>
-                    <option value="Pengabdian Masyarakat">Pengabdian Masyarakat</option>
-                    <option value="Kewirausahaan">Kewirausahaan</option>
-                    <option value="BPH">BPH</option>
+                    {masterDivisionsList.map((div) => (
+                      <option key={div} value={div}>
+                        {div}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div className="space-y-1">
                   <label className="text-[11px] font-bold text-slate-600 uppercase">Jabatan / Role</label>
                   <select
-                    value={editWhiteRole}
-                    onChange={(e) => setEditWhiteRole(e.target.value as Role)}
+                    value={editWhiteJabatan}
+                    onChange={(e) => {
+                      const jabName = e.target.value;
+                      setEditWhiteJabatan(jabName);
+                      const matched = masterJabatanList.find((j) => j.name === jabName);
+                      if (matched) {
+                        setEditWhiteRole(matched.role);
+                        if (matched.division && matched.division !== 'all' && matched.division !== 'Belum Ada Divisi') {
+                          setEditWhiteDivision(matched.division);
+                        }
+                      }
+                    }}
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/30 focus:outline-none bg-white font-bold"
                   >
-                    <option value="member">Anggota</option>
-                    <option value="kadiv">⭐ Kepala Divisi (Kadiv)</option>
-                    <option value="admin">🛡️ BPH</option>
+                    {editWhiteDivision === 'BPH' ? (
+                      masterJabatanList
+                        .filter((j) => j.division === 'BPH' || j.role === 'admin')
+                        .map((j) => (
+                          <option key={j.id} value={j.name}>
+                            {j.name}
+                          </option>
+                        ))
+                    ) : (
+                      masterJabatanList
+                        .filter((j) => j.division !== 'BPH')
+                        .map((j) => (
+                          <option key={j.id} value={j.name}>
+                            {j.name}
+                          </option>
+                        ))
+                    )}
                   </select>
                 </div>
               </div>

@@ -26,10 +26,24 @@ import {
   ShieldAlert,
   AlertCircle,
   Info,
+  Briefcase,
+  Settings,
+  X,
+  UserPlus,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Division, Role } from '../types/database';
 import { syncMemberUpdate, normalizeStudentId } from '../lib/memberSync';
+import {
+  MasterJabatan,
+  getMasterJabatanList,
+  saveMasterJabatan,
+  deleteMasterJabatan,
+  getMasterDivisions,
+  addMasterDivision,
+  deleteMasterDivision,
+  resolveUserJabatan,
+} from '../lib/roleMaster';
 import {
   AcademicPeriod,
   getAcademicPeriods,
@@ -47,6 +61,7 @@ import { purgeSuperAdminFromCache } from '../lib/attendanceSync';
 import { AdminDashboardPage } from './AdminDashboardPage';
 import DashboardPage from './DashboardPage';
 import { Footer } from '../components/Footer';
+import { MubesAwardsManager } from '../components/MubesAwardsManager';
 
 interface SuperAdminPageProps {
   onLogout: () => void;
@@ -56,36 +71,58 @@ interface MemberUser {
   npm: string;
   nim?: string;
   fullName: string;
-  division: Division;
+  division: Division | string;
   role: Role;
+  jabatan?: string;
   isClaimed?: boolean;
   email?: string;
   source: 'database' | 'whitelist' | 'override';
 }
 
 const DEFAULT_MEMBERS_ROSTER: MemberUser[] = [
-  { npm: '2414101078', nim: '2414101078', fullName: 'Pangki Deswa Rayhandi', division: 'BPH', role: 'admin', isClaimed: true, email: 'admin@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100010', nim: '2214100010', fullName: 'Deden Kurniawan', division: 'Publikasi dan Sosialisasi', role: 'kadiv', isClaimed: true, email: 'deden@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100025', nim: '2214100025', fullName: 'Siti Rahmawati', division: 'Pendidikan', role: 'kadiv', isClaimed: true, email: 'siti@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100033', nim: '2214100033', fullName: 'Fajar Pratama', division: 'Lingkungan Hidup', role: 'kadiv', isClaimed: true, email: 'fajar@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100048', nim: '2214100048', fullName: 'Anisa Permata', division: 'Publikasi dan Sosialisasi', role: 'member', isClaimed: true, email: 'anisa@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100052', nim: '2214100052', fullName: 'Rizky Ramadhan', division: 'Kewirausahaan', role: 'member', isClaimed: false, email: 'rizky@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100067', nim: '2214100067', fullName: 'Nadia Putri', division: 'Pengabdian Masyarakat', role: 'member', isClaimed: false, email: 'nadia@genbi-unma.ac.id', source: 'whitelist' },
+  { npm: '2414101078', nim: '2414101078', fullName: 'Pangki Deswa Rayhandi', division: 'Pengabdian Masyarakat', role: 'member', jabatan: 'Anggota', isClaimed: true, email: 'admin@genbi-unma.ac.id', source: 'whitelist' },
+  { npm: '2214100010', nim: '2214100010', fullName: 'Deden Kurniawan', division: 'Publikasi dan Sosialisasi', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'deden@genbi-unma.ac.id', source: 'whitelist' },
+  { npm: '2214100025', nim: '2214100025', fullName: 'Siti Rahmawati', division: 'Pendidikan', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'siti@genbi-unma.ac.id', source: 'whitelist' },
+  { npm: '2214100033', nim: '2214100033', fullName: 'Fajar Pratama', division: 'Lingkungan Hidup', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'fajar@genbi-unma.ac.id', source: 'whitelist' },
+  { npm: '2214100048', nim: '2214100048', fullName: 'Anisa Permata', division: 'Publikasi dan Sosialisasi', role: 'member', jabatan: 'Anggota', isClaimed: true, email: 'anisa@genbi-unma.ac.id', source: 'whitelist' },
+  { npm: '2214100052', nim: '2214100052', fullName: 'Rizky Ramadhan', division: 'Kewirausahaan', role: 'member', jabatan: 'Anggota', isClaimed: false, email: 'rizky@genbi-unma.ac.id', source: 'whitelist' },
+  { npm: '2214100067', nim: '2214100067', fullName: 'Nadia Putri', division: 'Pengabdian Masyarakat', role: 'member', jabatan: 'Anggota', isClaimed: false, email: 'nadia@genbi-unma.ac.id', source: 'whitelist' },
 ];
 
 export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'periods' | 'bph-panel' | 'simulator' | 'system' | 'audit'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'periods' | 'bph-panel' | 'simulator' | 'system' | 'audit' | 'mubes-awards'>('users');
   const [members, setMembers] = useState<MemberUser[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDivision, setFilterDivision] = useState<string>('all');
   const [filterRole, setFilterRole] = useState<string>('all');
 
-  // Modal Ubah Hak Akses Pengguna
+  // Master Jabatan & Divisi State
+  const [masterJabatanList, setMasterJabatanList] = useState<MasterJabatan[]>(getMasterJabatanList());
+  const [masterDivisions, setMasterDivisions] = useState<string[]>(getMasterDivisions());
+  const [showMasterModal, setShowMasterModal] = useState(false);
+  const [masterTab, setMasterTab] = useState<'jabatan' | 'divisi'>('jabatan');
+
+  // Form Tambah Jabatan Baru
+  const [newJabatanName, setNewJabatanName] = useState('');
+  const [newJabatanRole, setNewJabatanRole] = useState<'admin' | 'kadiv' | 'member'>('admin');
+  const [newJabatanDiv, setNewJabatanDiv] = useState('BPH');
+  const [newDivisionInput, setNewDivisionInput] = useState('');
+
+  // Modal Tambah Anggota / Penerima Baru
+  const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+  const [newMemberNpm, setNewMemberNpm] = useState('');
+  const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberDiv, setNewMemberDiv] = useState('Belum Ada Divisi');
+  const [newMemberJabatan, setNewMemberJabatan] = useState('Penerima Beasiswa Baru');
+  const [isSavingNewMember, setIsSavingNewMember] = useState(false);
+
+  // Modal Ubah Hak Akses & Jabatan Pengguna
   const [editingMember, setEditingMember] = useState<MemberUser | null>(null);
   const [editName, setEditName] = useState('');
-  const [editDivision, setEditDivision] = useState<Division>('Publikasi dan Sosialisasi');
+  const [editDivision, setEditDivision] = useState<string>('Publikasi dan Sosialisasi');
   const [editRole, setEditRole] = useState<Role>('member');
+  const [editJabatan, setEditJabatan] = useState('Anggota');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // State Simulator Multi-Role
@@ -143,6 +180,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             fullName: ov.full_name || def.fullName,
             division: ov.division || def.division,
             role: ov.role || def.role,
+            jabatan: ov.jabatan || def.jabatan,
             source: 'override' as const,
           } : {}),
         });
@@ -160,8 +198,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
               npm: cleanId,
               nim: cleanId,
               fullName: ov?.full_name || item.full_name || 'Anggota GenBI',
-              division: (ov?.division || item.division || 'Publikasi dan Sosialisasi') as Division,
+              division: (ov?.division || item.division || 'Publikasi dan Sosialisasi'),
               role: (ov?.role || item.role || 'member') as Role,
+              jabatan: ov?.jabatan || (item as any)?.jabatan || resolveUserJabatan(item),
               isClaimed: Boolean(item.is_claimed),
               source: ov ? 'override' : 'database',
             });
@@ -182,8 +221,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
               npm: cleanId,
               nim: cleanId,
               fullName: ov?.full_name || p.full_name || existing?.fullName || 'Pengguna GenBI',
-              division: (ov?.division || p.division || existing?.division || 'Publikasi dan Sosialisasi') as Division,
+              division: (ov?.division || p.division || existing?.division || 'Publikasi dan Sosialisasi'),
               role: (ov?.role || p.role || existing?.role || 'member') as Role,
+              jabatan: ov?.jabatan || (p as any)?.jabatan || existing?.jabatan || resolveUserJabatan(p),
               isClaimed: true,
               email: p.email || existing?.email,
               source: ov ? 'override' : 'database',
@@ -214,13 +254,27 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
       setAuditLogs(getAuditLogs());
     };
 
+    const handleJabatanSync = (e: any) => {
+      if (e?.detail) setMasterJabatanList(e.detail);
+      else setMasterJabatanList(getMasterJabatanList());
+    };
+
+    const handleDivisionSync = (e: any) => {
+      if (e?.detail) setMasterDivisions(e.detail);
+      else setMasterDivisions(getMasterDivisions());
+    };
+
     window.addEventListener('simak_member_sync', handleSync);
     window.addEventListener('simak_period_sync', handlePeriodSync);
     window.addEventListener('simak_audit_sync', handleAuditSync);
+    window.addEventListener('simak_jabatan_sync', handleJabatanSync);
+    window.addEventListener('simak_division_sync', handleDivisionSync);
     return () => {
       window.removeEventListener('simak_member_sync', handleSync);
       window.removeEventListener('simak_period_sync', handlePeriodSync);
       window.removeEventListener('simak_audit_sync', handleAuditSync);
+      window.removeEventListener('simak_jabatan_sync', handleJabatanSync);
+      window.removeEventListener('simak_division_sync', handleDivisionSync);
     };
   }, []);
 
@@ -325,15 +379,16 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
     }
   };
 
-  // Buka Modal Edit Hak Akses
+  // Buka Modal Edit Hak Akses & Jabatan
   const handleOpenEdit = (m: MemberUser) => {
     setEditingMember(m);
     setEditName(m.fullName);
     setEditDivision(m.division);
     setEditRole(m.role);
+    setEditJabatan(m.jabatan || resolveUserJabatan(m));
   };
 
-  // Simpan Perubahan Hak Akses / Role
+  // Simpan Perubahan Hak Akses / Role & Jabatan
   const handleSaveMemberAccess = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMember || !editName.trim()) {
@@ -354,6 +409,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 fullName: editName.trim(),
                 division: editDivision,
                 role: editRole,
+                jabatan: editJabatan,
                 source: 'override',
               }
             : m
@@ -367,6 +423,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         fullName: editName.trim(),
         division: editDivision,
         role: editRole,
+        jabatan: editJabatan,
       });
 
       recordAuditLog({
@@ -374,16 +431,116 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         actorRole: 'Super Admin',
         actionType: 'ROLE_CHANGE',
         target: `${cleanId} (${editName.trim()})`,
-        description: `Mengubah hak akses "${editName.trim()}" menjadi ${editRole === 'admin' ? 'BPH' : editRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'} pada divisi ${editDivision}.`,
+        description: `Mengubah hak akses "${editName.trim()}" menjadi ${editJabatan} (${editRole}) pada divisi ${editDivision}.`,
       });
 
       setEditingMember(null);
-      showToast(`Sukses! Hak akses untuk ${editName.trim()} berhasil diubah menjadi ${editRole === 'admin' ? 'BPH' : editRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'} dan disinkronkan ke seluruh sistem!`, 'success');
+      showToast(`Sukses! Data ${editName.trim()} berhasil diubah menjadi ${editJabatan} (${editDivision}) dan disinkronkan ke seluruh sistem!`, 'success');
     } catch (err: any) {
       showToast(err.message || 'Gagal menyimpan perubahan hak akses.', 'error');
     } finally {
       setIsSavingEdit(false);
     }
+  };
+
+  // Tambah Penerima Beasiswa / Anggota Baru
+  const handleCreateNewMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanId = normalizeStudentId(newMemberNpm);
+    if (!cleanId || !newMemberName.trim()) {
+      showToast('NPM dan Nama Lengkap wajib diisi!', 'warning');
+      return;
+    }
+
+    setIsSavingNewMember(true);
+    try {
+      const assignedRole: Role =
+        newMemberJabatan.toLowerCase().includes('ketua') ||
+        newMemberJabatan.toLowerCase().includes('sekretaris') ||
+        newMemberJabatan.toLowerCase().includes('bendahara') ||
+        newMemberDiv === 'BPH'
+          ? 'admin'
+          : newMemberJabatan.toLowerCase().includes('kepala divisi')
+          ? 'kadiv'
+          : 'member';
+
+      await syncMemberUpdate({
+        npm: cleanId,
+        nim: cleanId,
+        fullName: newMemberName.trim(),
+        division: newMemberDiv,
+        role: assignedRole,
+        jabatan: newMemberJabatan,
+      });
+
+      recordAuditLog({
+        actorName: 'Super Admin Root',
+        actorRole: 'Super Admin',
+        actionType: 'WHITELIST_ADD',
+        target: `${cleanId} (${newMemberName.trim()})`,
+        description: `Menambahkan penerima beasiswa baru "${newMemberName.trim()}" pada divisi ${newMemberDiv} dengan jabatan ${newMemberJabatan}.`,
+      });
+
+      setShowAddMemberModal(false);
+      setNewMemberNpm('');
+      setNewMemberName('');
+      loadAllUsers();
+      showToast(`Penerima beasiswa baru ${newMemberName.trim()} berhasil didaftarkan ke sistem!`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Gagal menambahkan anggota baru.', 'error');
+    } finally {
+      setIsSavingNewMember(false);
+    }
+  };
+
+  // Simpan Jabatan Baru di Master
+  const handleSaveNewJabatan = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newJabatanName.trim()) {
+      showToast('Nama jabatan wajib diisi!', 'warning');
+      return;
+    }
+    const updated = saveMasterJabatan({
+      name: newJabatanName.trim(),
+      role: newJabatanRole,
+      division: newJabatanDiv,
+    });
+    setMasterJabatanList(updated);
+    setNewJabatanName('');
+    showToast(`Jabatan "${newJabatanName.trim()}" berhasil ditambahkan ke master!`, 'success');
+  };
+
+  // Hapus Jabatan dari Master
+  const handleDeleteJabatan = (id: string, name: string) => {
+    if (!window.confirm(`Hapus jabatan "${name}" dari master? Anggota yang memakai jabatan ini dapat disesuaikan kembali.`)) return;
+    const updated = deleteMasterJabatan(id);
+    setMasterJabatanList(updated);
+    showToast(`Jabatan "${name}" berhasil dihapus dari sistem.`, 'info');
+  };
+
+  // Tambah Divisi Baru di Master
+  const handleAddDivision = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newDivisionInput.trim()) {
+      showToast('Nama divisi wajib diisi!', 'warning');
+      return;
+    }
+    const updated = addMasterDivision(newDivisionInput.trim());
+    setMasterDivisions(updated);
+    setNewDivisionInput('');
+    showToast(`Divisi "${newDivisionInput.trim()}" berhasil ditambahkan ke master!`, 'success');
+  };
+
+  // Hapus Divisi dari Master
+  const handleDeleteDivision = (name: string) => {
+    if (name === 'BPH') {
+      showToast('Divisi BPH tidak dapat dihapus karena merupakan struktur inti!', 'warning');
+      return;
+    }
+    if (!window.confirm(`Hapus divisi "${name}" dari master?`)) return;
+    const updated = deleteMasterDivision(name);
+    setMasterDivisions(updated);
+    showToast(`Divisi "${name}" berhasil dihapus.`, 'info');
   };
 
   // Reset & Sinkronisasi Ulang Database Cache
@@ -525,10 +682,80 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
       (m.email && m.email.toLowerCase().includes(q));
 
     const matchDivision = filterDivision === 'all' || m.division === filterDivision;
-    const matchRole = filterRole === 'all' || m.role === filterRole;
+    const currentJabatan = m.jabatan || resolveUserJabatan(m);
+    const matchRole =
+      filterRole === 'all' ||
+      m.role === filterRole ||
+      currentJabatan.toLowerCase() === filterRole.toLowerCase() ||
+      (m.jabatan && m.jabatan.toLowerCase() === filterRole.toLowerCase());
 
     return matchQuery && matchDivision && matchRole;
   });
+
+  const renderJabatanBadge = (m: MemberUser) => {
+    const jab = m.jabatan || resolveUserJabatan(m);
+    if (jab === 'Ketua') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/40 text-[10px] font-black shadow-xs">
+          <Crown className="w-3 h-3 text-amber-400" />
+          <span>Ketua</span>
+        </span>
+      );
+    }
+    if (jab === 'Wakil Ketua') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-400/40 text-[10px] font-black">
+          <Shield className="w-3 h-3 text-indigo-400" />
+          <span>Wakil Ketua</span>
+        </span>
+      );
+    }
+    if (jab.toLowerCase().includes('sekretaris')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/40 text-[10px] font-black">
+          <Briefcase className="w-3 h-3 text-blue-400" />
+          <span>{jab}</span>
+        </span>
+      );
+    }
+    if (jab.toLowerCase().includes('bendahara')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 text-[10px] font-black">
+          <Sparkles className="w-3 h-3 text-emerald-400" />
+          <span>{jab}</span>
+        </span>
+      );
+    }
+    if (m.role === 'kadiv' || jab.toLowerCase().includes('kepala divisi')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-black">
+          <span>{jab}</span>
+        </span>
+      );
+    }
+    if (m.role === 'admin') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-black">
+          <Shield className="w-3 h-3 text-blue-400" />
+          <span>{jab || 'BPH'}</span>
+        </span>
+      );
+    }
+    if (m.division === 'Belum Ada Divisi') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-800 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+          <UserPlus className="w-3 h-3 text-amber-400" />
+          <span>{jab || 'Penerima Baru'}</span>
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold">
+        <User className="w-3 h-3 text-slate-400" />
+        <span>{jab || 'Anggota'}</span>
+      </span>
+    );
+  };
 
   // User session untuk BPH Panel Operasional (menggunakan akun personal resmi BPH Pangki Deswa Rayhandi)
   const superAdminBphUser = {
@@ -581,10 +808,10 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         </div>
       )}
       {/* HEADER UTAMA SUPER ADMIN */}
-      <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-blue-900/40 px-4 sm:px-6 lg:px-8 py-3.5 shadow-xl shadow-blue-950/30">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-white p-1.5 shadow-md border border-blue-500/30 flex items-center justify-center">
+      <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-blue-900/40 px-3 sm:px-6 lg:px-8 py-3 shadow-xl shadow-blue-950/30">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-white p-1 shadow-md border border-blue-500/30 flex items-center justify-center shrink-0">
               <img
                 src="/logo-genbi.png"
                 alt="Logo GenBI UNMA"
@@ -592,32 +819,32 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
               />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm sm:text-base font-black tracking-tight text-white flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h1 className="text-xs sm:text-base font-black tracking-tight text-white flex items-center gap-1">
                   <span>SIMAK GENBI</span>
-                  <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 bg-clip-text text-transparent font-black tracking-wider flex items-center gap-1">
-                    • SUPER ADMIN <Crown className="w-3.5 h-3.5 text-amber-400 inline" />
+                  <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 bg-clip-text text-transparent font-black tracking-wider flex items-center gap-0.5">
+                    • SUPER ADMIN <Crown className="w-3 h-3 text-amber-400 inline" />
                   </span>
                 </h1>
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[10px] font-black uppercase tracking-wider">
+                <span className="px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[8px] sm:text-[10px] font-black uppercase tracking-wider">
                   ROOT SYSTEM
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 font-medium">
-                Pusat Kontrol Tertinggi Sistem & Pengembang Tunggal • Pangki Deswa Rayhandi
+              <p className="text-[9px] sm:text-[11px] text-slate-400 font-medium truncate max-w-[200px] xs:max-w-xs sm:max-w-none">
+                Pusat Kontrol Tertinggi Sistem & Pengembang Tunggal &bull; Pangki Deswa Rayhandi
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-950/50 border border-blue-800/40 text-xs">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[11px] font-mono text-blue-200">Supabase: Online</span>
+              <span className="text-[11px] font-mono text-blue-200">Online</span>
             </div>
 
             <button
               onClick={onLogout}
-              className="px-3.5 py-1.5 rounded-xl bg-red-950/50 hover:bg-red-900/70 border border-red-800/50 text-red-300 hover:text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              className="px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-red-950/50 hover:bg-red-900/70 border border-red-800/50 text-red-300 hover:text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-xs"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Keluar</span>
@@ -700,6 +927,17 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             <ShieldAlert className={`w-4 h-4 ${activeTab === 'audit' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Audit Trail & Log ({auditLogs.length})</span>
           </button>
+          <button
+            onClick={() => setActiveTab('mubes-awards')}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+              activeTab === 'mubes-awards'
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md shadow-amber-500/30'
+                : 'text-amber-300 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <Crown className={`w-4 h-4 ${activeTab === 'mubes-awards' ? 'text-slate-950' : 'text-amber-400'}`} />
+            <span>Reward Mubes (Annual Awards)</span>
+          </button>
         </div>
       </div>
 
@@ -709,32 +947,47 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         {activeTab === 'users' && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* Header Card & Penjelasan */}
-            <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-blue-950/70 via-slate-900 to-slate-900 border border-blue-500/30 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="p-4 sm:p-6 rounded-3xl bg-gradient-to-r from-blue-950/70 via-slate-900 to-slate-900 border border-blue-500/30 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[11px] font-bold uppercase mb-2">
                   <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Master Akses Pengguna</span>
+                  <span>Pusat Kontrol Akses & Struktur Organisasi</span>
                 </div>
-                <h2 className="text-lg sm:text-xl font-black text-white">
+                <h2 className="text-base sm:text-xl font-black text-white">
                   Kontrol Hak Akses Seluruh Anggota & Pengurus
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl">
-                  Ubah jabatan atau status akun (BPH, Kepala Divisi, Anggota) secara instan. Perubahan akan langsung tersinkronkan realtime ke seluruh sistem dan database.
+                  Pusat wewenang SUPERADMIN: Atur struktur jabatan BPH (Ketua, Wakil, Sekretaris, Bendahara), kelola divisi, dan daftarkan penerima beasiswa baru secara instan dan tersinkronisasi.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setShowAddMemberModal(true)}
+                  className="px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-950/40 active:scale-95"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>+ Tambah Anggota / Penerima Baru</span>
+                </button>
+                <button
+                  onClick={() => setShowMasterModal(true)}
+                  className="px-3 py-2 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/60 text-indigo-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                  title="Kelola nama-nama jabatan dan divisi organisasi"
+                >
+                  <Settings className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Master Jabatan & Divisi</span>
+                </button>
                 <button
                   onClick={loadAllUsers}
                   disabled={isLoading}
-                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-blue-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700 cursor-pointer disabled:opacity-50"
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-blue-300 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-700 cursor-pointer disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
                   <span>Muat Ulang</span>
                 </button>
                 <button
                   onClick={handleClearAndResync}
-                  className="px-3.5 py-2 bg-blue-950/60 hover:bg-blue-900 border border-blue-700/50 text-blue-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  className="px-3 py-2 bg-blue-950/60 hover:bg-blue-900 border border-blue-700/50 text-blue-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <Sliders className="w-3.5 h-3.5 text-amber-400" />
                   <span>Sinkronkan Ulang</span>
@@ -743,7 +996,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             </div>
 
             {/* Filter & Pencarian Bar */}
-            <div className="flex flex-col sm:flex-row items-center gap-3 bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 sm:gap-3 bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
               <div className="relative flex-1 w-full">
                 <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
@@ -762,9 +1015,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   className="flex-1 sm:flex-none px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-slate-200 font-bold focus:outline-none cursor-pointer"
                 >
                   <option value="all">Semua Jabatan</option>
-                  <option value="admin">BPH</option>
-                  <option value="kadiv">Kepala Divisi</option>
-                  <option value="member">Anggota</option>
+                  {masterJabatanList.map((j) => (
+                    <option key={j.id} value={j.name}>{j.name}</option>
+                  ))}
                 </select>
 
                 <select
@@ -773,18 +1026,15 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   className="flex-1 sm:flex-none px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-slate-200 font-bold focus:outline-none cursor-pointer"
                 >
                   <option value="all">Semua Divisi</option>
-                  <option value="BPH">BPH</option>
-                  <option value="Publikasi dan Sosialisasi">Publikasi & Sosialisasi</option>
-                  <option value="Lingkungan Hidup">Lingkungan Hidup</option>
-                  <option value="Pendidikan">Pendidikan</option>
-                  <option value="Pengabdian Masyarakat">Pengabdian Masyarakat</option>
-                  <option value="Kewirausahaan">Kewirausahaan</option>
+                  {masterDivisions.map((div) => (
+                    <option key={div} value={div}>{div}</option>
+                  ))}
                 </select>
               </div>
             </div>
 
-            {/* Tabel Daftar Pengguna & Akses */}
-            <div className="bg-slate-900/90 rounded-3xl border border-slate-800 overflow-hidden shadow-xl">
+            {/* Tampilan Desktop (Tabel Presisi) */}
+            <div className="hidden sm:block bg-slate-900/90 rounded-3xl border border-slate-800 overflow-hidden shadow-xl">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider text-[11px] font-black border-b border-slate-800">
@@ -792,76 +1042,105 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                       <th className="py-3.5 px-4">NPM / Identitas</th>
                       <th className="py-3.5 px-4">Nama Lengkap</th>
                       <th className="py-3.5 px-4">Divisi</th>
-                      <th className="py-3.5 px-4 text-center">Hak Akses / Role</th>
+                      <th className="py-3.5 px-4 text-center">Jabatan / Role</th>
                       <th className="py-3.5 px-4 text-center">Status Akun</th>
-                      <th className="py-3.5 px-4 text-center">Aksi Cepat</th>
+                      <th className="py-3.5 px-4 text-center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 font-medium">
-                    {filteredMembers.map((m) => {
-                      const isMe = m.npm === '2414101078';
-                      return (
-                        <tr key={m.npm} className="hover:bg-blue-950/30 transition">
-                          <td className="py-3 px-4 font-mono font-bold text-slate-300">
-                            <span className="px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-800">
-                              {m.npm}
+                    {filteredMembers.map((m) => (
+                      <tr key={m.npm} className="hover:bg-blue-950/30 transition">
+                        <td className="py-3 px-4 font-mono font-bold text-slate-300">
+                          <span className="px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-800">
+                            {m.npm}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-bold text-white">
+                          <span>{m.fullName}</span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-300">{m.division}</td>
+                        <td className="py-3 px-4 text-center">
+                          {renderJabatanBadge(m)}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          {m.isClaimed ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400">
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Aktif</span>
                             </span>
-                          </td>
-                          <td className="py-3 px-4 font-bold text-white flex items-center gap-2">
-                            <span>{m.fullName}</span>
-                            {isMe && (
-                              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[9px] font-black uppercase flex items-center gap-1">
-                                <Crown className="w-2.5 h-2.5 text-amber-400" />
-                                <span>Akun Pribadi</span>
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-slate-300">{m.division}</td>
-                          <td className="py-3 px-4 text-center">
-                            {m.role === 'admin' ? (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-black">
-                                <Shield className="w-3 h-3 text-blue-400" />
-                                <span>BPH</span>
-                              </span>
-                            ) : m.role === 'kadiv' ? (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-black">
-                                <Crown className="w-3 h-3 text-amber-400" />
-                                <span>Kepala Divisi</span>
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-bold">
-                                <User className="w-3 h-3 text-slate-400" />
-                                <span>Anggota</span>
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            {m.isClaimed ? (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400">
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Aktif</span>
-                              </span>
-                            ) : (
-                              <span className="text-[11px] text-amber-400 font-medium">
-                                Menunggu
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <button
-                              onClick={() => handleOpenEdit(m)}
-                              className="px-3 py-1.5 rounded-xl bg-blue-950/60 hover:bg-blue-900 text-blue-200 text-xs font-bold transition flex items-center gap-1 mx-auto border border-blue-700/50 cursor-pointer shadow-xs active:scale-95"
-                            >
-                              <Pencil className="w-3 h-3 text-blue-300" />
-                              <span>Ubah Hak Akses</span>
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                          ) : (
+                            <span className="text-[11px] text-amber-400 font-medium">
+                              Menunggu
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            onClick={() => handleOpenEdit(m)}
+                            className="px-3 py-1.5 rounded-xl bg-blue-950/60 hover:bg-blue-900 text-blue-200 text-xs font-bold transition flex items-center gap-1 mx-auto border border-blue-700/50 cursor-pointer shadow-xs active:scale-95"
+                          >
+                            <Pencil className="w-3 h-3 text-blue-300" />
+                            <span>Ubah</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            {/* Tampilan Mobile (Kartu Modern Presisi Tanpa Terpotong) */}
+            <div className="sm:hidden space-y-3">
+              {filteredMembers.map((m) => (
+                <div
+                  key={m.npm}
+                  className="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 space-y-3 shadow-lg"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h4 className="font-extrabold text-white text-sm leading-snug">
+                        {m.fullName}
+                      </h4>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-800 text-slate-300 font-mono text-[11px]">
+                          {m.npm}
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-medium truncate">
+                          {m.division}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      {m.isClaimed ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
+                          <Check className="w-3 h-3" />
+                          <span>Aktif</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] font-bold">
+                          Menunggu
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-800/60">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">Jabatan:</span>
+                      {renderJabatanBadge(m)}
+                    </div>
+
+                    <button
+                      onClick={() => handleOpenEdit(m)}
+                      className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition flex items-center gap-1 shadow-md shadow-blue-600/30 cursor-pointer active:scale-95"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      <span>Ubah</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -1023,7 +1302,6 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    <Crown className="w-3.5 h-3.5" />
                     <span>Kepala Divisi</span>
                   </button>
                   <button
@@ -1322,6 +1600,29 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             </div>
           </div>
         )}
+
+        {/* TAB 7: REWARD MUBES (ANNUAL AWARDS) */}
+        {activeTab === 'mubes-awards' && (
+          <MubesAwardsManager
+            currentUser={{
+              id: 'super-admin-root',
+              fullName: 'Pangki Deswa Rayhandi (Super Admin)',
+              role: 'superadmin',
+              npm: '2414101078',
+            }}
+            members={members.map((m) => ({
+              npm: m.npm,
+              nim: m.nim,
+              full_name: m.fullName,
+              fullName: m.fullName,
+              division: m.division,
+              role: m.role,
+              jabatan: m.jabatan,
+            }))}
+            events={[]}
+            onToast={showToast}
+          />
+        )}
       </main>
 
       {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
@@ -1439,27 +1740,34 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         </div>
       )}
 
-      {/* MODAL UBAH HAK AKSES / ROLE USER */}
+      {/* MODAL UBAH HAK AKSES & JABATAN PENGGUNA */}
       {editingMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
           <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-blue-500/30 p-6 shadow-2xl space-y-4 relative">
+            <button
+              onClick={() => setEditingMember(null)}
+              className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
             <div>
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-blue-400/30">
                 <Pencil className="w-3 h-3 text-blue-400" />
-                <span>Super Admin Hak Akses</span>
+                <span>Super Admin Hak Akses & Jabatan</span>
               </div>
               <h3 className="text-base font-black text-white">
-                Perbarui Hak Akses Akun
+                Perbarui Data & Jabatan Pengguna
               </h3>
               <p className="text-xs text-slate-400">
-                NPM: <span className="font-mono font-bold text-blue-300">{editingMember.npm}</span>
+                NPM / NIM: <span className="font-mono font-bold text-blue-300">{editingMember.npm}</span>
               </p>
             </div>
 
-            <form onSubmit={handleSaveMemberAccess} className="space-y-4 text-left">
+            <form onSubmit={handleSaveMemberAccess} className="space-y-3.5 text-left">
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-slate-400 uppercase">
-                  Nama Lengkap
+                  Nama Lengkap Sesuai SK
                 </label>
                 <input
                   type="text"
@@ -1472,37 +1780,81 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-400 uppercase">Divisi</label>
+                  <label className="text-[11px] font-bold text-slate-400 uppercase">Divisi Organisasi</label>
                   <select
                     value={editDivision}
-                    onChange={(e) => setEditDivision(e.target.value as Division)}
+                    onChange={(e) => {
+                      const div = e.target.value;
+                      setEditDivision(div);
+                      if (div === 'BPH') {
+                        setEditRole('admin');
+                        if (!editJabatan || editJabatan === 'Anggota') setEditJabatan('Ketua');
+                      } else if (div === 'Belum Ada Divisi') {
+                        setEditRole('member');
+                        setEditJabatan('Penerima Beasiswa Baru');
+                      }
+                    }}
                     className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
                   >
-                    <option value="Publikasi dan Sosialisasi">Publikasi & Sosialisasi</option>
-                    <option value="Lingkungan Hidup">Lingkungan Hidup</option>
-                    <option value="Pendidikan">Pendidikan</option>
-                    <option value="Pengabdian Masyarakat">Pengabdian Masyarakat</option>
-                    <option value="Kewirausahaan">Kewirausahaan</option>
-                    <option value="BPH">BPH</option>
+                    {masterDivisions.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-400 uppercase">Jabatan / Role</label>
+                  <label className="text-[11px] font-bold text-slate-400 uppercase">Pilih Jabatan</label>
                   <select
-                    value={editRole}
-                    onChange={(e) => setEditRole(e.target.value as Role)}
+                    value={editJabatan}
+                    onChange={(e) => {
+                      const jab = e.target.value;
+                      setEditJabatan(jab);
+                      const matched = masterJabatanList.find((j) => j.name === jab);
+                      if (matched) {
+                        setEditRole(matched.role);
+                      } else if (
+                        jab.toLowerCase().includes('ketua') ||
+                        jab.toLowerCase().includes('sekretaris') ||
+                        jab.toLowerCase().includes('bendahara') ||
+                        editDivision === 'BPH'
+                      ) {
+                        setEditRole('admin');
+                      } else if (jab.toLowerCase().includes('kepala divisi')) {
+                        setEditRole('kadiv');
+                      } else {
+                        setEditRole('member');
+                      }
+                    }}
                     className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-blue-200 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
                   >
-                    <option value="member">👤 Anggota</option>
-                    <option value="kadiv">⭐ Kepala Divisi (Kadiv)</option>
-                    <option value="admin">🛡️ BPH</option>
+                    {masterJabatanList.map((j) => (
+                      <option key={j.id} value={j.name}>
+                        {j.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-400 uppercase">
+                  Tingkat Hak Akses Sistem
+                </label>
+                <select
+                  value={editRole}
+                  onChange={(e) => setEditRole(e.target.value as Role)}
+                  className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-amber-300 font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
+                >
+                  <option value="admin">🛡️ BPH (Akses Penuh Manajemen Presensi & Rekap)</option>
+                  <option value="kadiv">Kepala Divisi (Kadiv - Akses Rekap & Verifikasi Divisi)</option>
+                  <option value="member">👤 Anggota (Akses Presensi & Kartu Anggota)</option>
+                </select>
+              </div>
+
               <div className="p-3 rounded-2xl bg-blue-950/40 border border-blue-800/40 text-[11px] text-blue-200">
-                💡 <strong>Catatan:</strong> Jika akun ini diubah dari BPH ke Anggota, akun akan langsung turun pangkat menjadi Anggota biasa di tabel whitelist, rekap keaktifan, dan profil secara otomatis.
+                💡 <strong>Sinkronisasi Universal:</strong> Perubahan nama, divisi, dan jabatan ini langsung tersinkronkan seketika ke Whitelist SK, Leaderboard/Podium, Rapor Anggota, dan profil pengguna.
               </div>
 
               <div className="pt-2 flex gap-2">
@@ -1519,6 +1871,312 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-600/30 transition cursor-pointer disabled:opacity-50"
                 >
                   {isSavingEdit ? 'Menyimpan...' : 'Simpan & Sinkronkan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL MASTER JABATAN & DIVISI ORGANISASI */}
+      {showMasterModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-lg rounded-[32px] bg-slate-900 border border-indigo-500/30 p-6 shadow-2xl space-y-4 relative max-h-[90vh] flex flex-col">
+            <button
+              onClick={() => setShowMasterModal(false)}
+              className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-indigo-400/30">
+                <Settings className="w-3 h-3 text-indigo-400" />
+                <span>Pusat Struktur Organisasi</span>
+              </div>
+              <h3 className="text-base font-black text-white">
+                Master Jabatan & Divisi GenBI
+              </h3>
+              <p className="text-xs text-slate-400">
+                Tambah, ubah, atau hapus jabatan (Ketua, Wakil, Sekretaris, Bendahara) dan divisi kapan saja sesuai kebutuhan SK kepengurusan berjalan.
+              </p>
+            </div>
+
+            {/* Tab Navigasi Master */}
+            <div className="flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setMasterTab('jabatan')}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                  masterTab === 'jabatan'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Daftar Jabatan ({masterJabatanList.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setMasterTab('divisi')}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                  masterTab === 'divisi'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Daftar Divisi ({masterDivisions.length})
+              </button>
+            </div>
+
+            {/* Konten Tab Master Jabatan */}
+            {masterTab === 'jabatan' && (
+              <div className="space-y-4 overflow-y-auto pr-1 flex-1">
+                {/* Form Tambah Jabatan Baru */}
+                <form onSubmit={handleSaveNewJabatan} className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800 space-y-2.5">
+                  <span className="text-[11px] font-bold text-blue-300 uppercase block">
+                    + Tambah Nama Jabatan Baru
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                    <input
+                      type="text"
+                      required
+                      placeholder="Contoh: Wakil Ketua"
+                      value={newJabatanName}
+                      onChange={(e) => setNewJabatanName(e.target.value)}
+                      className="px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none"
+                    />
+                    <select
+                      value={newJabatanDiv}
+                      onChange={(e) => setNewJabatanDiv(e.target.value)}
+                      className="px-2 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-bold"
+                    >
+                      <option value="BPH">BPH</option>
+                      <option value="all">Semua Divisi</option>
+                      {masterDivisions.filter((d) => d !== 'BPH').map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={newJabatanRole}
+                      onChange={(e) => setNewJabatanRole(e.target.value as any)}
+                      className="px-2 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white font-bold"
+                    >
+                      <option value="admin">🛡️ Akses BPH</option>
+                      <option value="kadiv">Akses Kadiv</option>
+                      <option value="member">👤 Akses Anggota</option>
+                    </select>
+                    <button
+                      type="submit"
+                      className="py-2 px-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-md shadow-blue-600/25"
+                    >
+                      Simpan
+                    </button>
+                  </div>
+                </form>
+
+                {/* List Jabatan Aktif */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                    Jabatan Terdaftar di Sistem
+                  </span>
+                  <div className="divide-y divide-slate-800/80 rounded-2xl bg-slate-950/60 border border-slate-800/80 overflow-hidden">
+                    {masterJabatanList.map((j) => (
+                      <div key={j.id} className="p-3 flex items-center justify-between gap-2 hover:bg-blue-950/20 transition">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-black text-white">{j.name}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
+                            j.role === 'admin'
+                              ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                              : j.role === 'kadiv'
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                              : 'bg-slate-800 text-slate-300 border-slate-700'
+                          }`}>
+                            {j.role === 'admin' ? 'BPH' : j.role === 'kadiv' ? 'Kadiv' : 'Anggota'}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteJabatan(j.id, j.name)}
+                          className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 rounded-lg transition cursor-pointer"
+                          title={`Hapus jabatan "${j.name}" dari sistem`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Konten Tab Master Divisi */}
+            {masterTab === 'divisi' && (
+              <div className="space-y-4 overflow-y-auto pr-1 flex-1">
+                {/* Form Tambah Divisi Baru */}
+                <form onSubmit={handleAddDivision} className="p-3.5 bg-slate-950/80 rounded-2xl border border-slate-800 space-y-2.5">
+                  <span className="text-[11px] font-bold text-blue-300 uppercase block">
+                    + Tambah Divisi Baru
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      required
+                      placeholder="Contoh: Hubungan Masyarakat"
+                      value={newDivisionInput}
+                      onChange={(e) => setNewDivisionInput(e.target.value)}
+                      className="flex-1 px-3 py-2 text-xs bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none"
+                    />
+                    <button
+                      type="submit"
+                      className="py-2 px-4 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black rounded-xl transition cursor-pointer shadow-md shadow-blue-600/25"
+                    >
+                      Tambah Divisi
+                    </button>
+                  </div>
+                </form>
+
+                {/* List Divisi Terdaftar */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                    Divisi Terdaftar di SIMAK GENBI
+                  </span>
+                  <div className="divide-y divide-slate-800/80 rounded-2xl bg-slate-950/60 border border-slate-800/80 overflow-hidden">
+                    {masterDivisions.map((d) => (
+                      <div key={d} className="p-3 flex items-center justify-between gap-2 hover:bg-blue-950/20 transition">
+                        <span className="text-xs font-black text-white">{d}</span>
+                        {d !== 'BPH' && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDivision(d)}
+                            className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 rounded-lg transition cursor-pointer"
+                            title={`Hapus divisi "${d}"`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowMasterModal(false)}
+                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Tutup Master Organisasi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL TAMBAH PENERIMA BEASISWA BARU */}
+      {showAddMemberModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-emerald-500/30 p-6 shadow-2xl space-y-4 relative">
+            <button
+              onClick={() => setShowAddMemberModal(false)}
+              className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-emerald-400/30">
+                <UserPlus className="w-3 h-3 text-emerald-400" />
+                <span>Penerima Beasiswa Baru</span>
+              </div>
+              <h3 className="text-base font-black text-white">
+                Daftarkan Anggota Baru ke Sistem
+              </h3>
+              <p className="text-xs text-slate-400">
+                Daftarkan mahasiswa penerima SK beasiswa baru yang belum masuk ke divisi manapun agar dapat langsung mengaktifkan akun di SIMAK GENBI.
+              </p>
+            </div>
+
+            <form onSubmit={handleCreateNewMember} className="space-y-3.5 text-left">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-400 uppercase">
+                  NPM / NIM Mahasiswa
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: 2414101099"
+                  value={newMemberNpm}
+                  onChange={(e) => setNewMemberNpm(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-400 uppercase">
+                  Nama Lengkap Sesuai SK
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Nama Lengkap Penerima Beasiswa"
+                  value={newMemberName}
+                  onChange={(e) => setNewMemberName(e.target.value)}
+                  className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase">Divisi Penempatan</label>
+                  <select
+                    value={newMemberDiv}
+                    onChange={(e) => setNewMemberDiv(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/40 cursor-pointer"
+                  >
+                    {masterDivisions.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-400 uppercase">Jabatan Awal</label>
+                  <select
+                    value={newMemberJabatan}
+                    onChange={(e) => setNewMemberJabatan(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-emerald-200 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/40 cursor-pointer"
+                  >
+                    {masterJabatanList.map((j) => (
+                      <option key={j.id} value={j.name}>
+                        {j.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-emerald-950/30 border border-emerald-800/40 text-[11px] text-emerald-200">
+                Mahasiswa yang didaftarkan akan otomatis masuk ke daftar Whitelist resmi dan siap melakukan aktivasi akun di aplikasi.
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddMemberModal(false)}
+                  className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingNewMember}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingNewMember ? 'Mendaftarkan...' : 'Daftarkan Anggota'}
                 </button>
               </div>
             </form>

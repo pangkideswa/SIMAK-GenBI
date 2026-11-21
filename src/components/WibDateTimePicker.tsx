@@ -83,8 +83,8 @@ export const WibDateTimePicker: React.FC<WibDateTimePickerProps> = ({
           <CalendarIcon className="w-3.5 h-3.5 text-blue-600" />
           <span>{label}</span>
         </label>
-        <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black tracking-tight">
-          WIB (Format 24 Jam)
+        <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold tracking-tight">
+          Format 24 Jam
         </span>
       </div>
 
@@ -143,57 +143,52 @@ export const WibDateTimePicker: React.FC<WibDateTimePickerProps> = ({
       </div>
 
       {/* Quick Presets Jam WIB */}
-      <div className="flex flex-wrap items-center gap-1 pt-0.5">
-        <span className="text-[10px] font-bold text-slate-400 flex items-center gap-0.5 mr-1">
+      <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
+        <span className="text-[10px] font-bold text-slate-400 flex items-center gap-0.5 mr-1 shrink-0">
           <Sparkles className="w-2.5 h-2.5 text-amber-500" />
           <span>Preset:</span>
         </span>
         <button
           type="button"
           onClick={setNow}
-          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer shrink-0"
         >
           Sekarang
         </button>
         <button
           type="button"
           onClick={() => applyPreset('08', '00')}
-          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer shrink-0"
         >
-          08:00 WIB
+          08:00
         </button>
         <button
           type="button"
           onClick={() => applyPreset('13', '30')}
-          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer shrink-0"
         >
-          13:30 WIB
+          13:30
         </button>
         <button
           type="button"
           onClick={() => applyPreset('16', '00')}
-          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer shrink-0"
         >
-          16:00 WIB
+          16:00
         </button>
         <button
           type="button"
           onClick={() => applyPreset('19', '30')}
-          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer shrink-0"
         >
-          19:30 WIB
+          19:30
         </button>
       </div>
 
       {/* Live Preview Format 24 Jam */}
-      <div className="text-[11px] font-bold text-blue-700 bg-blue-50/80 px-2.5 py-1.5 rounded-xl border border-blue-200/70 flex items-center justify-between mt-1">
-        <div className="flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-          <span>Waktu Terpilih: {formatDateTimeWIB(value || new Date().toISOString())}</span>
-        </div>
-        <span className="text-[9px] uppercase font-black tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-          24 Jam Murni
-        </span>
+      <div className="text-[11px] font-semibold text-blue-700 bg-blue-50/80 px-2.5 py-1.5 rounded-xl border border-blue-200/70 flex items-center gap-1.5 mt-1 truncate">
+        <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+        <span className="truncate">Waktu: {formatDateTimeWIB(value || new Date().toISOString())}</span>
       </div>
     </div>
   );

@@ -21,11 +21,12 @@ export const MemberReportModal: React.FC<MemberReportModalProps> = ({
 
   const studentId = evaluation.npm || evaluation.nim || '-';
   const roleName =
-    evaluation.role === 'admin'
+    (evaluation as any).jabatan ||
+    (evaluation.role === 'admin'
       ? 'BPH / Pengurus Harian'
       : evaluation.role === 'kadiv'
-      ? 'Kepala Divisi (Kadiv)'
-      : 'Anggota Aktif';
+      ? 'Kepala Divisi'
+      : 'Anggota Aktif');
 
   const isRecommended =
     evaluation.predicate === 'Sangat Aktif' || evaluation.total_points >= 60;
