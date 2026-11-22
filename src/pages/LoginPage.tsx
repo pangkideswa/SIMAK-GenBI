@@ -970,7 +970,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       </div>
 
       {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
-      <Footer className="border-t-0 bg-transparent py-4 text-slate-400" />
+      <Footer className={`border-t-0 bg-transparent py-4 transition-colors ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
 
       {/* Modal Dialog Lupa PIN / Reset Password */}
       {showForgotModal && (

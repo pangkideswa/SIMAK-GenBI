@@ -779,9 +779,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased selection:bg-blue-600 selection:text-white relative">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-slate-950 text-slate-100 flex flex-col antialiased selection:bg-blue-600 selection:text-white relative">
       {/* Background Ambient Glow (Navy Blue & Gold) */}
-      <div className="fixed inset-0 pointer-events-none -z-10">
+      <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
         <div className="absolute top-0 right-1/4 w-[500px] h-[500px] rounded-full bg-blue-600/10 blur-[120px]" />
         <div className="absolute bottom-1/3 left-10 w-[400px] h-[400px] rounded-full bg-amber-500/5 blur-[120px]" />
       </div>
@@ -808,9 +808,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         </div>
       )}
       {/* HEADER UTAMA SUPER ADMIN */}
-      <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-blue-900/40 px-3 sm:px-6 lg:px-8 py-3 shadow-xl shadow-blue-950/30">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+      <header className="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-blue-900/40 px-3 sm:px-6 lg:px-8 py-3 shadow-xl shadow-blue-950/30 w-full max-w-full">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4 w-full min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-white p-1 shadow-md border border-blue-500/30 flex items-center justify-center shrink-0">
               <img
                 src="/logo-genbi.png"
@@ -818,19 +818,19 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 className="w-full h-full object-contain"
               />
             </div>
-            <div>
-              <div className="flex items-center gap-1.5 sm:gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                 <h1 className="text-xs sm:text-base font-black tracking-tight text-white flex items-center gap-1">
                   <span>SIMAK GENBI</span>
                   <span className="bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 bg-clip-text text-transparent font-black tracking-wider flex items-center gap-0.5">
                     • SUPER ADMIN <Crown className="w-3 h-3 text-amber-400 inline" />
                   </span>
                 </h1>
-                <span className="px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[8px] sm:text-[10px] font-black uppercase tracking-wider">
+                <span className="px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[8px] sm:text-[10px] font-black uppercase tracking-wider shrink-0">
                   ROOT SYSTEM
                 </span>
               </div>
-              <p className="text-[9px] sm:text-[11px] text-slate-400 font-medium truncate max-w-[200px] xs:max-w-xs sm:max-w-none">
+              <p className="text-[9px] sm:text-[11px] text-slate-400 font-medium truncate max-w-full">
                 Pusat Kontrol Tertinggi Sistem & Pengembang Tunggal &bull; Pangki Deswa Rayhandi
               </p>
             </div>
@@ -844,7 +844,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
 
             <button
               onClick={onLogout}
-              className="px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-red-950/50 hover:bg-red-900/70 border border-red-800/50 text-red-300 hover:text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-xs"
+              className="px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-red-950/50 hover:bg-red-900/70 border border-red-800/50 text-red-300 hover:text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer shadow-xs shrink-0"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>Keluar</span>
@@ -942,7 +942,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
       </div>
 
       {/* KONTEN UTAMA SESUAI TAB */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      <main className="flex-1 max-w-7xl w-full min-w-0 mx-auto p-3 sm:p-6 lg:p-8 space-y-6 overflow-x-hidden">
         {/* TAB 1: MANAJEMEN PENGGUNA & HAK AKSES */}
         {activeTab === 'users' && (
           <div className="space-y-6 animate-in fade-in duration-200">
@@ -996,8 +996,8 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             </div>
 
             {/* Filter & Pencarian Bar */}
-            <div className="flex flex-col sm:flex-row items-center gap-2.5 sm:gap-3 bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
-              <div className="relative flex-1 w-full">
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 sm:gap-3 bg-slate-900/80 p-3 rounded-2xl border border-slate-800 w-full min-w-0">
+              <div className="relative flex-1 w-full min-w-0">
                 <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
@@ -1008,11 +1008,11 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 />
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
                 <select
                   value={filterRole}
                   onChange={(e) => setFilterRole(e.target.value)}
-                  className="flex-1 sm:flex-none px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-slate-200 font-bold focus:outline-none cursor-pointer"
+                  className="flex-1 min-w-0 sm:flex-none px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-slate-200 font-bold focus:outline-none cursor-pointer truncate"
                 >
                   <option value="all">Semua Jabatan</option>
                   {masterJabatanList.map((j) => (
@@ -1023,7 +1023,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 <select
                   value={filterDivision}
                   onChange={(e) => setFilterDivision(e.target.value)}
-                  className="flex-1 sm:flex-none px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-slate-200 font-bold focus:outline-none cursor-pointer"
+                  className="flex-1 min-w-0 sm:flex-none px-3 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-slate-200 font-bold focus:outline-none cursor-pointer truncate"
                 >
                   <option value="all">Semua Divisi</option>
                   {masterDivisions.map((div) => (

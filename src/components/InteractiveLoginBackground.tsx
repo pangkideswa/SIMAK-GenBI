@@ -31,46 +31,73 @@ export const InteractiveLoginBackground: React.FC<InteractiveLoginBackgroundProp
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
 
+    const isMobile =
+      width < 768 ||
+      (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0);
+
     const handleResize = () => {
       if (!canvas) return;
       width = canvas.width = window.innerWidth;
       height = canvas.height = window.innerHeight;
+      if (isMobile && ctx) {
+        drawStaticMobile();
+      }
     };
 
     window.addEventListener('resize', handleResize);
 
-    const isMobile = width < 768;
-    const particleCount = isMobile ? 38 : 72;
-    const maxDistance = isMobile ? 100 : 145;
+    const isDark = theme === 'dark';
+
+    // Optimasi performa mobile: Gambar titik statis sekali tanpa continuous requestAnimationFrame loop
+    const drawStaticMobile = () => {
+      ctx.clearRect(0, 0, width, height);
+      const dotCount = Math.min(24, Math.floor((width * height) / 25000));
+      for (let i = 0; i < dotCount; i++) {
+        const px = Math.random() * width;
+        const py = Math.random() * height;
+        const radius = Math.random() * 1.5 + 1;
+        const alpha = Math.random() * 0.4 + 0.2;
+        ctx.beginPath();
+        ctx.arc(px, py, radius, 0, Math.PI * 2);
+        ctx.fillStyle = isDark
+          ? `rgba(96, 165, 250, ${alpha})`
+          : `rgba(37, 99, 235, ${alpha * 0.8})`;
+        ctx.fill();
+      }
+    };
+
+    if (isMobile) {
+      drawStaticMobile();
+      return () => {
+        window.removeEventListener('resize', handleResize);
+      };
+    }
+
+    // Desktop: Animasi interaktif partikel constellation halus tanpa shadowBlur berat
+    const particleCount = 48;
+    const maxDistance = 130;
 
     const particles: Particle[] = [];
     for (let i = 0; i < particleCount; i++) {
       particles.push({
         x: Math.random() * width,
         y: Math.random() * height,
-        vx: (Math.random() - 0.5) * 0.5,
-        vy: (Math.random() - 0.5) * 0.5,
-        radius: Math.random() * 2 + 1.2,
-        baseAlpha: Math.random() * 0.5 + 0.35,
+        vx: (Math.random() - 0.5) * 0.45,
+        vy: (Math.random() - 0.5) * 0.45,
+        radius: Math.random() * 1.8 + 1,
+        baseAlpha: Math.random() * 0.4 + 0.3,
       });
     }
 
-    let mouse = {
+    const mouse = {
       x: -1000,
       y: -1000,
-      radius: 140,
+      radius: 120,
     };
 
     const handleMouseMove = (e: MouseEvent) => {
       mouse.x = e.clientX;
       mouse.y = e.clientY;
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length > 0) {
-        mouse.x = e.touches[0].clientX;
-        mouse.y = e.touches[0].clientY;
-      }
     };
 
     const handleMouseLeave = () => {
@@ -79,12 +106,10 @@ export const InteractiveLoginBackground: React.FC<InteractiveLoginBackgroundProp
     };
 
     window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('touchmove', handleTouchMove);
     window.addEventListener('mouseleave', handleMouseLeave);
 
     const render = () => {
       ctx.clearRect(0, 0, width, height);
-      const isDark = theme === 'dark';
 
       // Lines connecting particles
       for (let i = 0; i < particles.length; i++) {
@@ -94,12 +119,12 @@ export const InteractiveLoginBackground: React.FC<InteractiveLoginBackgroundProp
           const dist = Math.sqrt(dx * dx + dy * dy);
 
           if (dist < maxDistance) {
-            const alpha = (1 - dist / maxDistance) * (isDark ? 0.45 : 0.3);
+            const alpha = (1 - dist / maxDistance) * (isDark ? 0.35 : 0.22);
             ctx.beginPath();
             ctx.strokeStyle = isDark
               ? `rgba(59, 130, 246, ${alpha})`
-              : `rgba(37, 99, 235, ${alpha * 0.85})`;
-            ctx.lineWidth = isDark ? 1.2 : 0.9;
+              : `rgba(37, 99, 235, ${alpha * 0.8})`;
+            ctx.lineWidth = 1;
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
             ctx.stroke();
@@ -117,8 +142,8 @@ export const InteractiveLoginBackground: React.FC<InteractiveLoginBackgroundProp
         if (dist < mouse.radius) {
           const force = (mouse.radius - dist) / mouse.radius;
           const angle = Math.atan2(dy, dx);
-          p.x -= Math.cos(angle) * force * 1.5;
-          p.y -= Math.sin(angle) * force * 1.5;
+          p.x -= Math.cos(angle) * force * 1.2;
+          p.y -= Math.sin(angle) * force * 1.2;
         }
 
         p.x += p.vx;
@@ -132,10 +157,7 @@ export const InteractiveLoginBackground: React.FC<InteractiveLoginBackgroundProp
         ctx.fillStyle = isDark
           ? `rgba(96, 165, 250, ${p.baseAlpha})`
           : `rgba(37, 99, 235, ${p.baseAlpha * 0.75})`;
-        ctx.shadowBlur = isDark ? 6 : 3;
-        ctx.shadowColor = isDark ? 'rgba(59, 130, 246, 0.4)' : 'rgba(37, 99, 235, 0.25)';
         ctx.fill();
-        ctx.shadowBlur = 0;
       }
 
       animationFrameId = requestAnimationFrame(render);
@@ -147,7 +169,6 @@ export const InteractiveLoginBackground: React.FC<InteractiveLoginBackgroundProp
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('mouseleave', handleMouseLeave);
     };
   }, [theme]);
@@ -177,12 +198,12 @@ export const InteractiveLoginBackground: React.FC<InteractiveLoginBackgroundProp
         style={{
           backgroundImage: isDark
             ? `
-              linear-gradient(to right, rgba(59, 130, 246, 0.45) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(59, 130, 246, 0.45) 1px, transparent 1px)
+              linear-gradient(to right, rgba(59, 130, 246, 0.4) 1px, transparent 1px),
+              linear-gradient(to bottom, rgba(59, 130, 246, 0.4) 1px, transparent 1px)
             `
             : `
-              linear-gradient(to right, rgba(37, 99, 235, 0.3) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(37, 99, 235, 0.3) 1px, transparent 1px)
+              linear-gradient(to right, rgba(37, 99, 235, 0.25) 1px, transparent 1px),
+              linear-gradient(to bottom, rgba(37, 99, 235, 0.25) 1px, transparent 1px)
             `,
           backgroundSize: '44px 44px',
           maskImage: 'radial-gradient(ellipse at center, black 65%, transparent 95%)',
@@ -190,24 +211,24 @@ export const InteractiveLoginBackground: React.FC<InteractiveLoginBackgroundProp
         }}
       />
 
-      {/* 3. Glowing Aurora Orbs */}
+      {/* 3. Glowing Aurora Orbs (Desktop Only untuk Menjaga Performa Mobile 60 FPS) */}
       <div
-        className={`absolute -top-32 -left-32 w-[34rem] h-[34rem] rounded-full blur-[100px] animate-float-orb-1 transition-colors duration-500 ${
+        className={`hidden md:block absolute -top-32 -left-32 w-[34rem] h-[34rem] rounded-full blur-[100px] animate-float-orb-1 transition-colors duration-500 ${
           isDark ? 'bg-blue-500/35' : 'bg-blue-400/25'
         }`}
       />
       <div
-        className={`absolute top-1/4 -right-32 w-[36rem] h-[36rem] rounded-full blur-[110px] animate-float-orb-2 transition-colors duration-500 ${
+        className={`hidden md:block absolute top-1/4 -right-32 w-[36rem] h-[36rem] rounded-full blur-[110px] animate-float-orb-2 transition-colors duration-500 ${
           isDark ? 'bg-indigo-500/35' : 'bg-indigo-400/20'
         }`}
       />
       <div
-        className={`absolute -bottom-32 left-1/4 w-[38rem] h-[38rem] rounded-full blur-[110px] animate-float-orb-3 transition-colors duration-500 ${
+        className={`hidden md:block absolute -bottom-32 left-1/4 w-[38rem] h-[38rem] rounded-full blur-[110px] animate-float-orb-3 transition-colors duration-500 ${
           isDark ? 'bg-cyan-400/30' : 'bg-cyan-300/20'
         }`}
       />
 
-      {/* 4. Canvas Interaktif (Constellation Dots) */}
+      {/* 4. Canvas Partikel Interaktif */}
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full pointer-events-auto"

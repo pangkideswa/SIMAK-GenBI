@@ -2411,9 +2411,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           {/* Greeting Banner */}
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 px-1">
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-100/70 text-blue-800 text-[10px] font-extrabold uppercase tracking-widest mb-1">
-                Komunitas Penerima Beasiswa Bank Indonesia &bull; GenBI UNMA
-              </div>
               <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight leading-tight">
                 Halo, {profile.fullName} 👋
               </h2>
@@ -2460,18 +2457,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => avatarFileInputRef.current?.click()}
-                    disabled={isUploadingAvatar}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/90 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 text-xs font-bold transition cursor-pointer shadow-xs disabled:opacity-50"
-                    title="Pasang atau ganti foto profil ID Card"
-                  >
-                    <Camera className={`w-3.5 h-3.5 text-blue-600 ${isUploadingAvatar ? 'animate-spin' : ''}`} />
-                    <span className="hidden sm:inline">
-                      {isUploadingAvatar ? 'Memproses...' : profile.avatarUrl ? 'Ganti Foto' : 'Foto'}
-                    </span>
-                  </button>
                   <button
                     type="button"
                     onClick={() => setCardSide(cardSide === 'front' ? 'back' : 'front')}
@@ -2708,19 +2693,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   </div>
                 )}
               </div>
-
-              {/* Petunjuk pasang foto jika belum ada foto profil */}
-              {!profile.avatarUrl && (
-                <div
-                  onClick={() => avatarFileInputRef.current?.click()}
-                  className="mt-2 text-center p-2.5 rounded-2xl bg-blue-50/80 border border-blue-200/80 cursor-pointer hover:bg-blue-100/70 transition shadow-xs"
-                >
-                  <p className="text-[11px] font-bold text-blue-800 flex items-center justify-center gap-1.5">
-                    <Camera className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span>Klik di sini untuk pasang foto resmi Anda pada ID Card</span>
-                  </p>
-                </div>
-              )}
 
               {/* Hidden Canvas untuk Generate Smart ID Card Download PNG */}
               <div style={{ display: 'none' }} aria-hidden="true">
