@@ -107,7 +107,26 @@ export async function uploadProofToGDrive(
   file: File,
   metadata: GDriveUploadMetadata
 ): Promise<GDriveUploadResult> {
-  // 1. Kompresi terlebih dahulu untuk mencegah crash memori di browser ponsel
+  // 1. Validasi Keamanan Berkas (Defense-in-Depth):
+  // Batas ukuran berkas maksimal 5 MB
+  const MAX_FILE_SIZE = 5 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error('Ukuran berkas melebihi batas maksimal 5 MB. Harap unggah berkas yang lebih kecil.');
+  }
+
+  // Validasi format/MIME type yang sah (hanya gambar umum & PDF)
+  const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const mime = (file.type || '').toLowerCase();
+
+  const isMimeAllowed = mime.startsWith('image/') || mime === 'application/pdf';
+  const isExtAllowed = allowedExtensions.includes(ext);
+
+  if (!isMimeAllowed || !isExtAllowed) {
+    throw new Error('Format berkas tidak diizinkan. Sistem hanya menerima berkas Foto (JPG, PNG, WEBP) atau Dokumen PDF resmi.');
+  }
+
+  // 2. Kompresi gambar terlebih dahulu untuk mencegah crash memori di browser ponsel
   const processedFile = await compressImageIfNeeded(file);
 
   const gdriveEndpoint =
@@ -115,9 +134,10 @@ export async function uploadProofToGDrive(
     localStorage.getItem('simak_gdrive_upload_url') ||
     '';
 
-  const cleanNpm = metadata.uploaderNpm || 'NPM';
-  const cleanExt = processedFile.name.split('.').pop() || 'jpg';
-  const targetFileName = `IZIN_${cleanNpm}_${Date.now()}.${cleanExt}`;
+  const cleanNpm = (metadata.uploaderNpm || 'NPM').replace(/[^a-zA-Z0-9_-]/g, '');
+  const cleanExt = (processedFile.name.split('.').pop() || 'jpg').toLowerCase();
+  const safeExt = allowedExtensions.includes(cleanExt) ? cleanExt : 'jpg';
+  const targetFileName = `IZIN_${cleanNpm}_${Date.now()}.${safeExt}`;
 
   // 2. Jika Google Apps Script terkonfigurasi, coba unggah ke Google Drive dengan timeout 12 detik
   if (gdriveEndpoint && gdriveEndpoint.startsWith('https://script.google.com/')) {

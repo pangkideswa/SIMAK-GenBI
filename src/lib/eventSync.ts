@@ -1,5 +1,11 @@
 import { supabase } from './supabase';
 import { Event as EventType } from '../types/database';
+import {
+  broadcastEventMutated,
+  broadcastEventDeleted,
+  toggleEventLockCloud,
+  broadcastAttendanceDeleted,
+} from './meshSync';
 
 const EVENTS_OVERRIDES_KEY = 'simak_events_overrides';
 const DELETED_EVENTS_KEY = 'simak_deleted_events';
@@ -48,13 +54,14 @@ export async function saveOrUpdateEvent(eventPayload: Partial<EventType> & { id?
     console.warn('Gagal menyimpan event overrides:', e);
   }
 
-  // 2. Broadcast ke seluruh tab / halaman React aktif
+  // 2. Broadcast ke seluruh tab / halaman React aktif & P2P Mesh Realtime (Desktop & Mobile)
   try {
     window.dispatchEvent(
       new CustomEvent('simak_event_sync', {
         detail: fullEvent,
       })
     );
+    broadcastEventMutated(fullEvent);
   } catch {}
 
   // 3. Simpan ke Database Supabase jika memungkinkan
@@ -132,13 +139,14 @@ export async function deleteEventPermanently(eventId: string): Promise<boolean> 
     }
   } catch {}
 
-  // 2. Broadcast ke semua komponen
+  // 2. Broadcast ke semua komponen & P2P Mesh Realtime
   try {
     window.dispatchEvent(
       new CustomEvent('simak_event_deleted', {
         detail: { id: eventId },
       })
     );
+    broadcastEventDeleted(eventId);
   } catch {}
 
   // 3. Hapus dari Supabase
@@ -189,13 +197,14 @@ export async function deleteAttendanceRecord(attendanceId: string, eventId?: str
     }
   } catch {}
 
-  // 4. Broadcast Event Hapus ke seluruh komponen React
+  // 4. Broadcast Event Hapus ke seluruh komponen React & P2P Mesh
   try {
     window.dispatchEvent(
       new CustomEvent('simak_attendance_deleted', {
         detail: { id: attendanceId, eventId },
       })
     );
+    broadcastAttendanceDeleted(attendanceId, eventId);
   } catch {}
 
   // 5. Eksekusi Hapus di Database Supabase
@@ -261,13 +270,21 @@ export async function toggleEventLock(eventId: string, nextStatus: boolean): Pro
     console.warn('Gagal menyimpan status kunci event ke cache lokal:', e);
   }
 
-  // 2. Broadcast ke seluruh tab / komponen React aktif
+    // 2. Broadcast ke seluruh tab / komponen React aktif & Cloud Mesh
   try {
     window.dispatchEvent(
       new CustomEvent('simak_event_lock_sync', {
         detail: { eventId, is_active: nextStatus },
       })
     );
+    toggleEventLockCloud(eventId, nextStatus);
+    const raw = localStorage.getItem(EVENTS_OVERRIDES_KEY);
+    if (raw) {
+      const ov = JSON.parse(raw);
+      if (ov[eventId]) {
+        broadcastEventMutated(ov[eventId]);
+      }
+    }
   } catch {}
 
   // 3. Update ke Supabase database jika terhubung

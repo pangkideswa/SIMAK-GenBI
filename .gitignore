@@ -41,3 +41,6 @@ dist-ssr/
 .env.local
 .env.*.local
 !.env.example
+
+# Agent / workspace internal
+.agent/

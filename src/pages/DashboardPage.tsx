@@ -61,15 +61,20 @@ import {
   checkUpcomingAgendaReminders,
 } from '../lib/notificationService';
 import { filterDeletedAttendances, filterDeletedEvents } from '../lib/eventSync';
+import { fetchEventsCloud, fetchEvaluationsCloud, initMeshSync } from '../lib/meshSync';
+import { checkRateLimit, recordFailedAttempt, resetRateLimit } from '../lib/rateLimiter';
 import {
   recordUnifiedAttendance,
   applyEvaluationsOverrides,
+  sanitizeMemberIdentity,
   EVALUATIONS_OVERRIDES_KEY,
   isSuperAdminAccount,
   purgeSuperAdminFromCache,
+  isEventAttendedByUser,
 } from '../lib/attendanceSync';
 import { MemberReportModal } from '../components/MemberReportModal';
 import { MubesAwardsMemberView } from '../components/MubesAwardsMemberView';
+import { getMubesAwardsState, initMubesAwardsRealtime, fetchMubesAwardsCloud } from '../lib/awardsSync';
 import {
   enqueueOfflineAttendance,
   initOfflineQueueSync,
@@ -174,7 +179,7 @@ const DEFAULT_SAMPLE_LEADERBOARD: MemberEvaluation[] = [
     npm: '2414101078',
     nim: '2414101078',
     email: 'admin@genbi-unma.ac.id',
-    full_name: 'Pangki Deswa Rayhandi',
+    full_name: 'Ahmad Fauzi',
     division: 'BPH',
     role: 'admin',
     avatar_url: null,
@@ -317,7 +322,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     id: user.id,
     npm: currentNpm,
     nim: currentNpm,
-    fullName: user.fullName,
+    fullName: (user.fullName?.toLowerCase().includes('pangki') || currentNpm === '2414101078') ? 'Ahmad Fauzi' : user.fullName,
     division: user.division,
     role: user.role,
     phone: (() => {
@@ -408,6 +413,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [activeTab, setActiveTab] = useState<'events' | 'history' | 'leaderboard' | 'kadiv-workspace' | 'mubes-awards' | 'tiers'>('events');
   const [selectedLeaderboardDivision, setSelectedLeaderboardDivision] = useState<string>('Semua');
   const [leaderboardSortOrder, setLeaderboardSortOrder] = useState<'highest' | 'lowest'>('highest');
+  const [awardsState, setAwardsState] = useState(() => getMubesAwardsState());
+
+  useEffect(() => {
+    const handleSyncAwards = () => setAwardsState(getMubesAwardsState());
+    window.addEventListener('simak_awards_sync', handleSyncAwards);
+    window.addEventListener('storage', handleSyncAwards);
+    const cleanupRealtime = initMubesAwardsRealtime((state) => setAwardsState(state));
+    return () => {
+      window.removeEventListener('simak_awards_sync', handleSyncAwards);
+      window.removeEventListener('storage', handleSyncAwards);
+      cleanupRealtime();
+    };
+  }, []);
 
   // Ref Kartu ID untuk Export PNG
   const memberCardRef = useRef<HTMLDivElement | null>(null);
@@ -475,6 +493,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [isSubmittingAttendance, setIsSubmittingAttendance] = useState(false);
   const qrScannerRef = useRef<Html5Qrcode | null>(null);
   const qrImageInputRef = useRef<HTMLInputElement | null>(null);
+  const isProcessingScanRef = useRef<boolean>(false);
   const [isScanningImage, setIsScanningImage] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<'environment' | 'user'>('environment');
   const [isCameraStarting, setIsCameraStarting] = useState(false);
@@ -524,8 +543,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   // Helper kompresi foto profil menjadi format persegi (Square 1:1) dan hemat memori
   const processProfileImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
+      // 1. Validasi batas ukuran file (maksimal 5 MB)
+      if (file.size > 5 * 1024 * 1024) {
+        reject(new Error('Ukuran foto profil melebihi batas maksimal 5 MB. Silakan pilih foto dengan resolusi lebih kecil.'));
+        return;
+      }
+      // 2. Validasi format gambar yang diizinkan
       if (!file.type.startsWith('image/')) {
-        reject(new Error('File yang dipilih bukan berkas gambar.'));
+        reject(new Error('File yang dipilih bukan berkas gambar yang sah.'));
         return;
       }
 
@@ -858,7 +883,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       const finalPhone = p?.phone || localExtra?.phone || null;
       const finalProdi = p?.study_program || localExtra?.study_program || null;
       const finalBio = p?.bio || localExtra?.bio || null;
-      const finalFullName = ov?.full_name || p?.full_name || localExtra?.full_name || user.fullName;
+      let finalFullName = ov?.full_name || p?.full_name || localExtra?.full_name || user.fullName;
+      let finalAvatar = effectiveAvatar;
+      if (
+        cleanId === '2414101078' ||
+        finalFullName.toLowerCase().includes('pangki') ||
+        user.id === 'a1111111-1111-1111-1111-111111111111'
+      ) {
+        finalFullName = 'Ahmad Fauzi';
+        finalAvatar = null;
+      }
 
       setProfile({
         id: p?.id || user.id,
@@ -870,7 +904,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         phone: finalPhone,
         studyProgram: finalProdi,
         bio: finalBio,
-        avatarUrl: effectiveAvatar,
+        avatarUrl: finalAvatar,
       });
       setEditFullName(finalFullName);
       setEditPhone(finalPhone || '');
@@ -1018,35 +1052,42 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     };
 
     try {
-      const { data, error } = await supabase
+      const cloudData = await fetchEvaluationsCloud();
+      const { data } = await supabase
         .from('member_evaluations')
         .select('*')
         .order('total_points', { ascending: false });
 
-      if (error) throw error;
-      if (data && data.length > 0) {
-        const mapped: MemberEvaluation[] = data.map((d: any) => ({
-          ...d,
-          npm: d.npm || d.nim || '-',
-          nim: d.npm || d.nim || '-',
-        }));
-        const finalLb = applyEvaluationsOverrides(applyOverrides(mapped)).filter((m) => !isSuperAdminAccount(m));
-        setLeaderboard(finalLb);
-        localStorage.setItem('simak_leaderboard_cache', JSON.stringify(finalLb));
-      } else {
-        const cached = localStorage.getItem('simak_leaderboard_cache');
-        if (cached) {
-          setLeaderboard(applyEvaluationsOverrides(applyOverrides(JSON.parse(cached))).filter((m) => !isSuperAdminAccount(m)));
-        } else {
-          setLeaderboard(applyEvaluationsOverrides(applyOverrides(DEFAULT_SAMPLE_LEADERBOARD)).filter((m) => !isSuperAdminAccount(m)));
-        }
-      }
+      const baseList = (data && data.length > 0)
+        ? data
+        : (cloudData && cloudData.length > 0)
+        ? cloudData
+        : DEFAULT_SAMPLE_LEADERBOARD;
+
+      const mapped: MemberEvaluation[] = baseList.map((d: any) => ({
+        ...d,
+        npm: d.npm || d.nim || '-',
+        nim: d.npm || d.nim || '-',
+      }));
+      const finalLb = applyEvaluationsOverrides(applyOverrides(mapped))
+        .filter((m) => !isSuperAdminAccount(m))
+        .map((m) => sanitizeMemberIdentity(m));
+      setLeaderboard(finalLb);
+      localStorage.setItem('simak_leaderboard_cache', JSON.stringify(finalLb));
     } catch {
       const cached = localStorage.getItem('simak_leaderboard_cache');
       if (cached) {
-        setLeaderboard(applyEvaluationsOverrides(applyOverrides(JSON.parse(cached))).filter((m) => !isSuperAdminAccount(m)));
+        setLeaderboard(
+          applyEvaluationsOverrides(applyOverrides(JSON.parse(cached)))
+            .filter((m) => !isSuperAdminAccount(m))
+            .map((m) => sanitizeMemberIdentity(m))
+        );
       } else {
-        setLeaderboard(applyEvaluationsOverrides(applyOverrides(DEFAULT_SAMPLE_LEADERBOARD)).filter((m) => !isSuperAdminAccount(m)));
+        setLeaderboard(
+          applyEvaluationsOverrides(applyOverrides(DEFAULT_SAMPLE_LEADERBOARD))
+            .filter((m) => !isSuperAdminAccount(m))
+            .map((m) => sanitizeMemberIdentity(m))
+        );
       }
     } finally {
       setIsLoadingLeaderboard(false);
@@ -1118,31 +1159,34 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           };
         }
 
-        setEvaluation(loadedEval);
-        localStorage.setItem('simak_eval_' + user.id, JSON.stringify(loadedEval));
+        const safeEval = sanitizeMemberIdentity(loadedEval);
+        setEvaluation(safeEval);
+        localStorage.setItem('simak_eval_' + user.id, JSON.stringify(safeEval));
       } else if (localOverride) {
-        setEvaluation(localOverride);
-        localStorage.setItem('simak_eval_' + user.id, JSON.stringify(localOverride));
+        const safeOverride = sanitizeMemberIdentity(localOverride);
+        setEvaluation(safeOverride);
+        localStorage.setItem('simak_eval_' + user.id, JSON.stringify(safeOverride));
       } else {
         const cached = localStorage.getItem('simak_eval_' + user.id);
         if (cached) {
-          setEvaluation(JSON.parse(cached));
+          setEvaluation(sanitizeMemberIdentity(JSON.parse(cached)));
         }
       }
     } catch {
       if (localOverride) {
-        setEvaluation(localOverride);
-        localStorage.setItem('simak_eval_' + user.id, JSON.stringify(localOverride));
+        const safeOverride = sanitizeMemberIdentity(localOverride);
+        setEvaluation(safeOverride);
+        localStorage.setItem('simak_eval_' + user.id, JSON.stringify(safeOverride));
       } else {
         const cached = localStorage.getItem('simak_eval_' + user.id);
         if (cached) {
-          setEvaluation(JSON.parse(cached));
+          setEvaluation(sanitizeMemberIdentity(JSON.parse(cached)));
         }
       }
     }
   };
 
-  // 3. Fetch Agenda Terjadwal (events aktif dengan dukungan overrides lokal & realtime sync)
+  // 3. Fetch Agenda Terjadwal (events aktif dengan dukungan overrides lokal, cloud api & realtime sync)
   const fetchEvents = async () => {
     try {
       const { data: eventData } = await supabase
@@ -1150,17 +1194,32 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         .select('*')
         .order('event_date', { ascending: true });
 
+      const cloudEvents = await fetchEventsCloud();
+
       let eventOverrides: Record<string, any> = {};
       try {
         const raw = localStorage.getItem('simak_events_overrides');
         if (raw) eventOverrides = JSON.parse(raw);
       } catch {}
 
-      const base = (eventData && eventData.length > 0) ? eventData : DEFAULT_SAMPLE_EVENTS;
+      const base = (eventData && eventData.length > 0)
+        ? eventData
+        : (cloudEvents && cloudEvents.length > 0)
+        ? cloudEvents
+        : DEFAULT_SAMPLE_EVENTS;
+
       const merged = base.map((ev: any) => {
         const ov = eventOverrides[ev.id];
         return ov ? { ...ev, ...ov } : ev;
       });
+
+      if (cloudEvents && cloudEvents.length > 0) {
+        for (const ce of cloudEvents) {
+          if (!merged.some((e: any) => e.id === ce.id)) {
+            merged.unshift(ce);
+          }
+        }
+      }
 
       for (const [ovId, ovEv] of Object.entries(eventOverrides)) {
         if (!merged.some((e: any) => e.id === ovId)) {
@@ -1168,7 +1227,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         }
       }
 
-      const activeEvents = filterDeletedEvents(merged.filter((ev: any) => ev.is_active !== false) as EventType[]);
+      const activeEvents = filterDeletedEvents(
+        merged.filter((ev: any) => ev.is_active !== false && ev.category !== 'mubes-system') as EventType[]
+      );
       setEvents(activeEvents);
       // Cek dan jadwalkan pengingat otomatis jika ada agenda dalam 24 jam ke depan
       checkUpcomingAgendaReminders(activeEvents);
@@ -1179,11 +1240,34 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         if (raw) eventOverrides = JSON.parse(raw);
       } catch {}
 
-      const merged = DEFAULT_SAMPLE_EVENTS.map((ev: any) => {
+      let cloudEvents: EventType[] | null = null;
+      try {
+        cloudEvents = await fetchEventsCloud();
+      } catch {}
+
+      const baseList = (cloudEvents && cloudEvents.length > 0) ? cloudEvents : DEFAULT_SAMPLE_EVENTS;
+      const merged = baseList.map((ev: any) => {
         const ov = eventOverrides[ev.id];
         return ov ? { ...ev, ...ov } : ev;
       });
-      const activeEvents = filterDeletedEvents(merged.filter((ev: any) => ev.is_active !== false) as EventType[]);
+
+      if (cloudEvents && cloudEvents.length > 0) {
+        for (const ce of cloudEvents) {
+          if (!merged.some((e: any) => e.id === ce.id)) {
+            merged.unshift(ce);
+          }
+        }
+      }
+
+      for (const [ovId, ovEv] of Object.entries(eventOverrides)) {
+        if (!merged.some((e: any) => e.id === ovId)) {
+          merged.unshift(ovEv);
+        }
+      }
+
+      const activeEvents = filterDeletedEvents(
+        merged.filter((ev: any) => ev.is_active !== false && ev.category !== 'mubes-system') as EventType[]
+      );
       setEvents(activeEvents);
     }
   };
@@ -1325,7 +1409,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     };
 
     const handleEventDeleted = (e: any) => {
-      const delId = e?.detail?.id;
+      const delId = typeof e?.detail === 'string' ? e.detail : e?.detail?.id;
       if (!delId) return;
       setEvents((prev) => prev.filter((ev) => ev.id !== delId));
     };
@@ -1382,6 +1466,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       );
     };
 
+    const cleanupMesh = initMeshSync({
+      onEventMutated: (ev) => {
+        handleEventSync({ detail: ev });
+      },
+      onEventDeleted: (eventId) => {
+        handleEventDeleted({ detail: { id: eventId } });
+      },
+      onAttendanceMutated: () => {
+        handleAttSubmittedOrSynced();
+      },
+      onAttendanceDeleted: (attId) => {
+        handleAttDeleted({ detail: { id: attId } });
+      },
+    });
+
     window.addEventListener('simak_member_sync', handleSync);
     window.addEventListener('simak_event_sync', handleEventSync);
     window.addEventListener('simak_event_lock_sync', handleLockSync);
@@ -1414,6 +1513,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     );
 
     return () => {
+      cleanupMesh();
       cleanupOffline();
       window.removeEventListener('simak_member_sync', handleSync);
       window.removeEventListener('simak_event_sync', handleEventSync);
@@ -1471,6 +1571,24 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const handleScanFromImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setScannerMessage({
+        type: 'error',
+        text: 'Ukuran foto barcode melebihi 10 MB. Silakan pilih foto dengan resolusi lebih wajar.',
+      });
+      e.target.value = '';
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setScannerMessage({
+        type: 'error',
+        text: 'Berkas yang dipilih harus berupa gambar foto.',
+      });
+      e.target.value = '';
+      return;
+    }
 
     setIsScanningImage(true);
     setScannerMessage(null);
@@ -1651,6 +1769,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           { facingMode: facing },
           scanConfig,
           (decodedText) => {
+            if (isProcessingScanRef.current) return;
+            isProcessingScanRef.current = true;
+            stopCameraScanner();
             handleProcessAttendanceToken(decodedText);
           },
           () => {}
@@ -1679,6 +1800,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             chosenCam.id,
             scanConfig,
             (decodedText) => {
+              if (isProcessingScanRef.current) return;
+              isProcessingScanRef.current = true;
+              stopCameraScanner();
               handleProcessAttendanceToken(decodedText);
             },
             () => {}
@@ -1766,11 +1890,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     }
   };
 
-  // Validasi presensi dengan qr_token asli + Geofencing GPS Kampus UNMA
+  // Validasi presensi dengan qr_token asli + Geofencing GPS Kampus UNMA & Rate Limiting Anti-Tebak Token
   const handleProcessAttendanceToken = async (token: string) => {
     const cleanToken = token.trim();
     if (!cleanToken) {
       setScannerMessage({ type: 'error', text: 'Kode token wajib diisi.' });
+      return;
+    }
+
+    // Proteksi Rate Limiting: 3x salah tebak token -> kunci 20 detik
+    const tokenRateKey = 'token_guess_' + (user.id || 'guest');
+    const rateCheck = checkRateLimit(tokenRateKey, 3, 20);
+    if (rateCheck.isLocked) {
+      setScannerMessage({
+        type: 'error',
+        text: `Terlalu banyak percobaan kode token yang salah. Akses presensi dibatasi sementara selama ${rateCheck.retryAfterSeconds} detik.`,
+      });
       return;
     }
 
@@ -1783,10 +1918,35 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       );
 
       if (!matchedEvent) {
-        setScannerMessage({
-          type: 'error',
-          text: `Kode token "${cleanToken}" tidak valid atau sesi kegiatan sudah dikunci pengurus.`,
-        });
+        const failCheck = recordFailedAttempt(tokenRateKey, 3, 20);
+        if (failCheck.isLocked) {
+          setScannerMessage({
+            type: 'error',
+            text: `Kode token salah (3x). Akses presensi dikunci sementara selama ${failCheck.retryAfterSeconds} detik.`,
+          });
+        } else {
+          setScannerMessage({
+            type: 'error',
+            text: `Kode token "${cleanToken}" tidak valid atau sesi kegiatan sudah dikunci. (Tersisa ${failCheck.remainingAttempts} percobaan)`,
+          });
+        }
+        setIsSubmittingAttendance(false);
+        return;
+      }
+
+      // Berhasil menemukan event yang valid -> Reset limiter tebak token
+      resetRateLimit(tokenRateKey);
+
+      // Cek apakah user sudah pernah presensi untuk agenda ini
+      const isAlreadyAttended = attendances.some(
+        (a) => a.event_id === matchedEvent.id && (a.status === 'hadir' || a.status === 'delegasi')
+      ) || isEventAttendedByUser(matchedEvent.id, user.id, profile.npm || user.npm);
+
+      if (isAlreadyAttended) {
+        await stopCameraScanner();
+        setShowScanModal(false);
+        showToast(`Anda sudah tercatat hadir pada agenda "${matchedEvent.title}".`, 'info');
+        isProcessingScanRef.current = false;
         setIsSubmittingAttendance(false);
         return;
       }
@@ -1875,7 +2035,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       fetchEvaluation();
       fetchAttendances();
 
-      const newTotalPoints = evaluation.total_points + matchedEvent.points;
+      // Skala poin maksimal 100
+      const newTotalPoints = Math.min(100, Math.max(0, evaluation.total_points + matchedEvent.points));
       const newPredicate: EvaluationPredicate =
         newTotalPoints >= 80 ? 'Sangat Aktif' :
         newTotalPoints >= 60 ? 'Aktif' : 'Perlu Pembinaan';
@@ -1930,6 +2091,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       });
     } finally {
       setIsSubmittingAttendance(false);
+      // Jika terjadi error atau validasi gagal, izinkan pengguna untuk mencoba scan kembali
+      if (!showSuccessModal) {
+        isProcessingScanRef.current = false;
+      }
     }
   };
 
@@ -2430,12 +2595,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             {/* ======================================================== */}
             <div className="md:col-span-5 space-y-4">
               {/* Header Tab Pilihan Sisi Kartu (Depan / Belakang) */}
-              <div className="flex items-center justify-between px-1">
-                <div className="flex items-center gap-1 p-1 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs">
+              <div className="flex items-center justify-between px-1 gap-1.5 flex-nowrap">
+                <div className="flex items-center gap-1 p-1 rounded-2xl bg-white/80 border border-slate-200/80 shadow-xs shrink-0">
                   <button
                     type="button"
                     onClick={() => setCardSide('front')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                       cardSide === 'front'
                         ? 'bg-blue-600 text-white shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
@@ -2446,7 +2611,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   <button
                     type="button"
                     onClick={() => setCardSide('back')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                    className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition cursor-pointer whitespace-nowrap ${
                       cardSide === 'back'
                         ? 'bg-blue-600 text-white shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
@@ -2456,20 +2621,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   </button>
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => setCardSide(cardSide === 'front' ? 'back' : 'front')}
-                    className="p-2 rounded-xl bg-white/90 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition cursor-pointer shadow-xs"
+                    className="p-1.5 sm:p-2 rounded-xl bg-white/90 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition cursor-pointer shadow-xs"
                     title="Putar Sisi Kartu"
                   >
-                    <RotateCw className="w-4 h-4" />
+                    <RotateCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </button>
                   <button
                     type="button"
                     onClick={handleDownloadCardPng}
                     disabled={isDownloadingCard}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-xs shadow-md shadow-blue-600/20 transition cursor-pointer disabled:opacity-50"
+                    className="flex items-center gap-1 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-[11px] sm:text-xs shadow-md shadow-blue-600/20 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
                     title="Unduh Kartu Gambar PNG Format Standar KTM (300 DPI)"
                   >
                     <Download className={`w-3.5 h-3.5 ${isDownloadingCard ? 'animate-bounce' : ''}`} />
@@ -2524,11 +2689,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                             KOMISARIAT UNMA
                           </p>
                         </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-400/20 backdrop-blur-md border border-amber-300/40 text-[9px] font-black tracking-wider text-amber-300">
-                        <Sparkles className="w-3 h-3 text-amber-300 shrink-0" />
-                        <span>SMART ID</span>
                       </div>
                     </div>
 
@@ -2709,6 +2869,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <button
                   onClick={() => {
+                    isProcessingScanRef.current = false;
                     setShowScanModal(true);
                     setScannerMessage(null);
                   }}
@@ -2791,25 +2952,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <div className="md:col-span-7 space-y-5">
               {/* Kartu Evaluasi Keaktifan (Glassmorphism + Dynamic Progress) */}
               <div className="p-5 sm:p-6 rounded-[28px] bg-white/90 backdrop-blur-xl border border-white ring-1 ring-slate-900/5 shadow-xl shadow-slate-200/50 space-y-5">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200/80 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="p-2.5 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200/80 shadow-xs shrink-0">
                       <Award className="w-6 h-6" />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-black text-slate-900 tracking-tight">
+                    <div className="min-w-0">
+                      <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-snug">
                         Evaluasi Keaktifan Anggota
                       </h3>
-                      <p className="text-[11px] text-slate-500 font-medium">
+                      <p className="text-[11px] sm:text-xs text-slate-500 font-medium leading-normal mt-0.5">
                         Standar Evaluasi Penerima Beasiswa Bank Indonesia
                       </p>
                     </div>
                   </div>
 
-                  {/* Predikat Badge */}
-                  <div className={`px-3 py-1 rounded-full border text-xs font-black flex items-center gap-1.5 shadow-xs ${currentTier.badgeBg}`}>
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>{currentTier.tierName}</span>
+                  {/* Predikat Badge (Di Mobile berada di baris tersendiri yang rapi, tidak menyempitkan judul) */}
+                  <div className="self-start sm:self-auto shrink-0 pl-11 sm:pl-0">
+                    <div className={`px-3 py-1 rounded-full border text-xs font-black flex items-center gap-1.5 shadow-xs ${currentTier.badgeBg}`}>
+                      <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                      <span>{currentTier.tierName}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -2888,8 +3051,37 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               </div>
 
               {/* Navigation Tabs (Agenda vs Riwayat vs Panduan Poin) */}
-              <div className="space-y-4">
-                <div className="flex p-1 bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xs overflow-x-auto">
+              <div className="space-y-3">
+                {/* Banner Notifikasi Pengumuman Resmi Mubes jika sudah diterbitkan */}
+                {awardsState.isPublished && (
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-yellow-500 text-slate-950 shadow-md shadow-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 animate-in slide-in-from-top-2 duration-300">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-white/90 p-1.5 flex items-center justify-center shrink-0 shadow-xs">
+                        <Trophy className="w-4 h-4 text-amber-600" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black uppercase tracking-wide">
+                          🏆 Hasil Resmi Reward Mubes Telah Terbit!
+                        </h4>
+                        <p className="text-[11px] font-medium text-slate-900">
+                          BPH telah mempublikasikan 8 penerima penghargaan tahunan GenBI UNMA.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('mubes-awards');
+                        fetchMubesAwardsCloud();
+                      }}
+                      className="self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-900 text-white text-xs font-black shadow-xs transition cursor-pointer shrink-0"
+                    >
+                      Buka Hall of Fame &rarr;
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex p-1 bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xs overflow-x-auto no-scrollbar">
                   <button
                     onClick={() => setActiveTab('events')}
                     className={`flex-1 min-w-[100px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
@@ -2945,8 +3137,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   )}
 
                   <button
-                    onClick={() => setActiveTab('mubes-awards')}
-                    className={`flex-1 min-w-[125px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    onClick={() => {
+                      setActiveTab('mubes-awards');
+                      fetchMubesAwardsCloud();
+                    }}
+                    className={`flex-1 min-w-[125px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer relative ${
                       activeTab === 'mubes-awards'
                         ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-500/20'
                         : 'text-amber-800 bg-amber-50 hover:bg-amber-100'
@@ -2954,6 +3149,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   >
                     <Trophy className="w-3.5 h-3.5 text-amber-500" />
                     <span>Reward Mubes</span>
+                    {awardsState.isPublished && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping ml-0.5" />
+                    )}
                   </button>
 
                   <button
@@ -3033,6 +3231,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => {
+                                      isProcessingScanRef.current = false;
                                       setManualToken(agenda.qr_token);
                                       setShowScanModal(true);
                                       setScanMode('manual');
@@ -3067,15 +3266,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                     {agenda.qr_token}
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5 sm:gap-2">
                                   <button
                                     type="button"
                                     onClick={() => handleShareWhatsApp(agenda)}
-                                    className="flex items-center gap-1 text-emerald-600 hover:text-emerald-700 font-bold cursor-pointer"
+                                    className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-600 font-bold transition flex items-center gap-1 cursor-pointer border border-emerald-200/60 shadow-2xs"
                                     title="Bagikan info acara ke WhatsApp"
                                   >
-                                    <Share2 className="w-3 h-3" />
-                                    <span>Share WA</span>
+                                    <Share2 className="w-3.5 h-3.5" />
+                                    <span className="hidden sm:inline">Share WA</span>
                                   </button>
                                   <button
                                     type="button"
@@ -3083,11 +3282,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                       navigator.clipboard.writeText(agenda.qr_token);
                                       showToast(`Token "${agenda.qr_token}" disalin!`, 'info');
                                     }}
-                                    className="flex items-center gap-1 text-slate-400 hover:text-slate-700 font-semibold cursor-pointer"
+                                    className="p-1.5 sm:px-2.5 sm:py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold transition flex items-center gap-1 cursor-pointer border border-slate-200 shadow-2xs"
                                     title="Salin token ke clipboard"
                                   >
-                                    <Copy className="w-3 h-3" />
-                                    <span>Salin</span>
+                                    <Copy className="w-3.5 h-3.5" />
+                                    <span className="hidden sm:inline">Salin</span>
                                   </button>
                                 </div>
                               </div>
@@ -3209,6 +3408,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     {leaderboard.filter((m) => !isSuperAdminAccount(m)).length >= 3 && (() => {
                       const topThree = leaderboard
                         .filter((m) => !isSuperAdminAccount(m))
+                        .map((m) => sanitizeMemberIdentity(m))
                         .slice()
                         .sort((a, b) => b.total_points - a.total_points)
                         .slice(0, 3);
@@ -3389,6 +3589,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     {(() => {
                       const filtered = leaderboard
                         .filter((m) => !isSuperAdminAccount(m))
+                        .map((m) => sanitizeMemberIdentity(m))
                         .filter(
                           (m) =>
                             selectedLeaderboardDivision === 'Semua' ||
@@ -3721,6 +3922,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="w-full max-w-sm rounded-[32px] bg-white p-6 shadow-2xl space-y-4 text-center relative border border-slate-100">
             <button
               onClick={() => {
+                isProcessingScanRef.current = false;
                 setShowScanModal(false);
                 stopCameraScanner();
               }}

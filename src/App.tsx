@@ -6,7 +6,7 @@ import { SuperAdminPage } from './pages/SuperAdminPage';
 import { DocumentVerificationView } from './components/DocumentVerificationView';
 import { SatelliteLoader } from './components/SatelliteLoader';
 import { supabase } from './lib/supabase';
-import { purgeSuperAdminFromCache } from './lib/attendanceSync';
+import { purgeSuperAdminFromCache, sanitizeMemberIdentity } from './lib/attendanceSync';
 
 interface UserSession {
   id: string;
@@ -23,7 +23,7 @@ export function App() {
     try {
       const saved = localStorage.getItem('simak_user_session');
       if (saved) {
-        const parsed = JSON.parse(saved);
+        const parsed = sanitizeMemberIdentity(JSON.parse(saved));
         return {
           ...parsed,
           npm: parsed.npm || parsed.nim || '-',
@@ -56,25 +56,25 @@ export function App() {
           const profile = profileData as any;
 
           if (profile) {
-            const activeUser: UserSession = {
+            const activeUser: UserSession = sanitizeMemberIdentity({
               id: profile.id,
               npm: profile.npm || profile.nim || session.user.user_metadata?.npm || session.user.user_metadata?.nim || '-',
               nim: profile.npm || profile.nim || '-',
               fullName: profile.full_name,
               division: profile.division,
               role: profile.role,
-            };
+            });
             setUser(activeUser);
             localStorage.setItem('simak_user_session', JSON.stringify(activeUser));
           } else {
-            const fallbackUser: UserSession = {
+            const fallbackUser: UserSession = sanitizeMemberIdentity({
               id: session.user.id,
               npm: session.user.user_metadata?.npm || session.user.user_metadata?.nim || '-',
               nim: session.user.user_metadata?.npm || session.user.user_metadata?.nim || '-',
               fullName: session.user.user_metadata?.full_name || 'Anggota GenBI',
               division: session.user.user_metadata?.division || 'Publikasi dan Sosialisasi',
               role: session.user.user_metadata?.role || 'member',
-            };
+            });
             setUser(fallbackUser);
             localStorage.setItem('simak_user_session', JSON.stringify(fallbackUser));
           }
@@ -101,11 +101,11 @@ export function App() {
   }, []);
 
   const handleLoginSuccess = (userProfile: UserSession) => {
-    const normalized: UserSession = {
+    const normalized: UserSession = sanitizeMemberIdentity({
       ...userProfile,
       npm: userProfile.npm || userProfile.nim || '-',
       nim: userProfile.npm || userProfile.nim || '-',
-    };
+    });
     setUser(normalized);
     localStorage.setItem('simak_user_session', JSON.stringify(normalized));
   };

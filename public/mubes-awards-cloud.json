@@ -1,0 +1,74 @@
+{
+  "isPublished": false,
+  "academicYear": "2026/2027",
+  "winners": {
+    "bph-terbaik": {
+      "id": "bph-terbaik",
+      "categoryTitle": "BPH Terbaik",
+      "categorySubtitle": "Dipilih secara demokratis melalui voting seluruh anggota & Kadiv",
+      "winnerName": "Ahmad Fauzi",
+      "winnerDivision": "Pengabdian Masyarakat",
+      "winnerRole": "BPH",
+      "notes": "Dedikasi tinggi dalam manajemen operasional dan digitalisasi sistem SIMAK GENBI"
+    },
+    "kadiv-terbaik": {
+      "id": "kadiv-terbaik",
+      "categoryTitle": "Kepala Divisi Terbaik",
+      "categorySubtitle": "Kepemimpinan dan pembinaan divisi paling berdedikasi",
+      "winnerName": "Siti Rahmawati",
+      "winnerDivision": "Pendidikan",
+      "winnerRole": "kadiv",
+      "notes": "Kepemimpinan yang responsif dan konsisten mengayomi anggota divisi"
+    },
+    "proker-terbaik": {
+      "id": "proker-terbaik",
+      "categoryTitle": "Program of the Year",
+      "categorySubtitle": "Program kerja paling berdampak positif dan sukses terlaksana",
+      "winnerName": "Sosialisasi Cinta Bangga Paham (CBP) Rupiah",
+      "winnerDivision": "Publikasi dan Sosialisasi",
+      "notes": "Kolaborasi sukses bersama SMA di Majalengka dengan partisipasi peserta maksimal"
+    },
+    "inspiring-member": {
+      "id": "inspiring-member",
+      "categoryTitle": "Most Inspiring Member",
+      "categorySubtitle": "Inisiatif, loyalitas, dan kontribusi nyata yang menginspirasi",
+      "winnerName": "Deden Kurniawan",
+      "winnerDivision": "Publikasi dan Sosialisasi",
+      "notes": "Keteladanan tinggi dalam publikasi kreatif dan semangat kolaborasi"
+    },
+    "anggota-terbaik": {
+      "id": "anggota-terbaik",
+      "categoryTitle": "Anggota Terbaik",
+      "categorySubtitle": "Kombinasi integritas kepribadian dan keaktifan organisasi",
+      "winnerName": "Fajar Pratama",
+      "winnerDivision": "Lingkungan Hidup",
+      "notes": "Integritas tinggi, ramah, dan selalu siap berkontribusi pada kegiatan GenBI"
+    },
+    "anggota-paling-aktif": {
+      "id": "anggota-paling-aktif",
+      "categoryTitle": "Anggota Paling Aktif",
+      "categorySubtitle": "Akumulasi skor poin kehadiran dan keaktifan tertinggi di sistem",
+      "winnerName": "Nadia Putri",
+      "winnerDivision": "Pengabdian Masyarakat",
+      "notes": "Perolehan poin keaktifan tertinggi dengan tingkat kehadiran 100%"
+    },
+    "best-division": {
+      "id": "best-division",
+      "categoryTitle": "Best Division of the Year",
+      "categorySubtitle": "Divisi paling produktif dengan pencapaian target proker terbaik",
+      "winnerName": "Divisi Pendidikan",
+      "winnerDivision": "Pendidikan",
+      "notes": "Seluruh agenda kerja tuntas terlaksana dengan hasil evaluasi memuaskan"
+    },
+    "divisi-terkompak": {
+      "id": "divisi-terkompak",
+      "categoryTitle": "Divisi Terkompak",
+      "categorySubtitle": "Kekompakan tim divisi dengan persentase kehadiran paling solid",
+      "winnerName": "Divisi Publikasi dan Sosialisasi",
+      "winnerDivision": "Publikasi dan Sosialisasi",
+      "notes": "Solidaritas anggota paling aktif dengan tingkat presensi teratur"
+    }
+  },
+  "bphVotes": {},
+  "voterNpms": []
+}

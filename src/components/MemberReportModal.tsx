@@ -244,7 +244,7 @@ export const MemberReportModal: React.FC<MemberReportModalProps> = ({
               </div>
 
               <p className="font-black text-slate-950 underline">
-                Pangki Deswa Rayhandi
+                Ahmad Fauzi
               </p>
               <p className="text-[10px] text-slate-500 font-mono">
                 Ketua / BPH GenBI UNMA

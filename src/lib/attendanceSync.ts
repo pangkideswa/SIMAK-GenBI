@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { normalizeStudentId } from './memberSync';
+import { broadcastAttendanceRecorded, saveEvaluationCloud } from './meshSync';
 import type { MemberEvaluation, Role, Division, EvaluationPredicate } from '../types/database';
 
 export const ALL_ATTENDANCES_KEY = 'simak_all_attendances';
@@ -73,6 +74,148 @@ export function purgeSuperAdminFromCache(): void {
         localStorage.setItem(ALL_ATTENDANCES_KEY, JSON.stringify(filtered));
       }
     }
+
+    // 4. Bersihkan cache avatar & nama akun demo Pangki Deswa Rayhandi -> Ahmad Fauzi
+    try {
+      localStorage.removeItem('simak_avatar_2414101078');
+      localStorage.removeItem('simak_avatar_a1111111-1111-1111-1111-111111111111');
+      localStorage.removeItem('simak_avatar_admin');
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if ((key.includes('2414101078') || key.includes('a1111111-1111')) && key.startsWith('simak_avatar_')) {
+          localStorage.removeItem(key);
+        }
+        if (key.toLowerCase().includes('pangki')) {
+          localStorage.removeItem(key);
+        }
+      }
+
+      // Bersihkan juga simak_user_session jika masih tersimpan nama Pangki
+      const rawSess = localStorage.getItem('simak_user_session');
+      if (rawSess) {
+        try {
+          const sess = JSON.parse(rawSess);
+          if (
+            String(sess.fullName || '').toLowerCase().includes('pangki') ||
+            sess.npm === '2414101078' ||
+            sess.id === 'a1111111-1111-1111-1111-111111111111'
+          ) {
+            sess.fullName = sess.role === 'superadmin' ? 'Ahmad Fauzi (Super Admin)' : 'Ahmad Fauzi';
+            sess.avatarUrl = null;
+            localStorage.setItem('simak_user_session', JSON.stringify(sess));
+          }
+        } catch {}
+      }
+
+      // Bersihkan simak_whitelist_overrides jika tersisa nama Pangki
+      const rawWl = localStorage.getItem('simak_whitelist_overrides');
+      if (rawWl) {
+        try {
+          const wl = JSON.parse(rawWl);
+          let changed = false;
+          for (const [k, v] of Object.entries(wl)) {
+            if (k === '2414101078' || String((v as any)?.full_name || '').toLowerCase().includes('pangki')) {
+              (v as any).full_name = 'Ahmad Fauzi';
+              (v as any).avatar_url = null;
+              changed = true;
+            }
+          }
+          if (changed) localStorage.setItem('simak_whitelist_overrides', JSON.stringify(wl));
+        } catch {}
+      }
+
+      // Bersihkan simak_evaluations_overrides jika tersisa nama Pangki atau skor melebihi 100
+      const rawEv = localStorage.getItem(EVALUATIONS_OVERRIDES_KEY);
+      if (rawEv) {
+        try {
+          const ev = JSON.parse(rawEv);
+          let changed = false;
+          for (const [k, v] of Object.entries(ev)) {
+            if (
+              k === '2414101078' ||
+              k === 'a1111111-1111-1111-1111-111111111111' ||
+              String((v as any)?.full_name || '').toLowerCase().includes('pangki')
+            ) {
+              (v as any).full_name = 'Ahmad Fauzi';
+              (v as any).avatar_url = null;
+              changed = true;
+            }
+            // Batas maksimal poin keaktifan adalah 100
+            if (typeof (v as any)?.total_points === 'number' && (v as any).total_points > 100) {
+              (v as any).total_points = 100;
+              changed = true;
+            }
+          }
+          if (changed) localStorage.setItem(EVALUATIONS_OVERRIDES_KEY, JSON.stringify(ev));
+        } catch {}
+      }
+
+      // 5. Perbaikan Otomatis / Self-Healing Akun Anisa Permata (2214100048)
+      // Mencegah akumulasi poin tidak wajar (misal 310 poin / 21 kehadiran) akibat bug multi-scan kamera
+      try {
+        const anisaNpm = '2214100048';
+        const anisaKeys = [`simak_attendances_${anisaNpm}`, 'simak_attendances_c3333333-3333-3333-3333-333333333333'];
+        for (const ak of anisaKeys) {
+          const rawA = localStorage.getItem(ak);
+          if (rawA) {
+            const list = JSON.parse(rawA);
+            if (Array.isArray(list)) {
+              const seenEvents = new Set<string>();
+              const dedup = list.filter((item: any) => {
+                if (!item.event_id || seenEvents.has(item.event_id)) return false;
+                seenEvents.add(item.event_id);
+                return true;
+              });
+              localStorage.setItem(ak, JSON.stringify(dedup));
+            }
+          }
+        }
+
+        const rawAllAtt = localStorage.getItem(ALL_ATTENDANCES_KEY);
+        if (rawAllAtt) {
+          const allList = JSON.parse(rawAllAtt);
+          if (Array.isArray(allList)) {
+            const seenUserEvents = new Set<string>();
+            const dedupAll = allList.filter((item: any) => {
+              const key = `${normalizeStudentId(item.npm || item.nim || item.user_id)}_${item.event_id}`;
+              if (seenUserEvents.has(key)) return false;
+              seenUserEvents.add(key);
+              return true;
+            });
+            localStorage.setItem(ALL_ATTENDANCES_KEY, JSON.stringify(dedupAll));
+          }
+        }
+
+        const rawEvMap = localStorage.getItem(EVALUATIONS_OVERRIDES_KEY);
+        if (rawEvMap) {
+          const evMap = JSON.parse(rawEvMap);
+          const anisa = evMap[anisaNpm] || evMap['c3333333-3333-3333-3333-333333333333'];
+          if (anisa && (Number(anisa.total_points) > 100 || Number(anisa.total_hadir) > 7)) {
+            const fixedAnisa = {
+              ...anisa,
+              full_name: 'Anisa Permata',
+              npm: anisaNpm,
+              nim: anisaNpm,
+              division: 'Publikasi dan Sosialisasi',
+              role: 'member',
+              total_points: 75,
+              total_hadir: 5,
+              total_izin: 2,
+              total_alfa: 0,
+              attendance_percentage: 71.4,
+              predicate: 'Aktif',
+              avatar_url: null,
+            };
+            evMap[anisaNpm] = fixedAnisa;
+            evMap['c3333333-3333-3333-3333-333333333333'] = fixedAnisa;
+            localStorage.setItem(EVALUATIONS_OVERRIDES_KEY, JSON.stringify(evMap));
+            localStorage.setItem(`simak_eval_${anisaNpm}`, JSON.stringify(fixedAnisa));
+            localStorage.setItem('simak_eval_c3333333-3333-3333-3333-333333333333', JSON.stringify(fixedAnisa));
+          }
+        }
+      } catch {}
+    } catch {}
 
     // 4. Hapus key-key personal SUPERADMIN jika tersisa
     const keysToRemove = [
@@ -173,6 +316,13 @@ export async function recordUnifiedAttendance(
     return attRecord;
   }
 
+  // Proteksi Double-Attendance: Jika pengguna sudah tercatat hadir pada event ini, jangan akumulasi poin berulang
+  const alreadyAttended = isEventAttendedByUser(input.eventId, input.userId, cleanNpm);
+  if (alreadyAttended) {
+    console.info(`Presensi untuk event ${input.eventId} sudah pernah dicatat oleh user ${cleanNpm || input.userId}. Poin tidak diakumulasi ulang.`);
+    return attRecord;
+  }
+
   // 1. Simpan ke simak_all_attendances (Shared Global Cache)
   try {
     const rawAll = localStorage.getItem(ALL_ATTENDANCES_KEY);
@@ -240,8 +390,9 @@ export async function recordUnifiedAttendance(
 
     const prevPoints = Number(currentEval?.total_points ?? (input.userRole === 'admin' ? 95 : input.userRole === 'kadiv' ? 85 : 60));
     const prevHadir = Number(currentEval?.total_hadir ?? (input.userRole === 'admin' ? 7 : input.userRole === 'kadiv' ? 6 : 4));
-    const nextPoints = prevPoints + attRecord.event_points;
-    const nextHadir = prevHadir + 1;
+    // Poin maksimal dalam SIMAK GENBI adalah 100 (skala 0 - 100)
+    const nextPoints = Math.min(100, Math.max(0, prevPoints + attRecord.event_points));
+    const nextHadir = Math.min(10, prevHadir + 1);
     const nextPredicate: EvaluationPredicate =
       nextPoints >= 80 ? 'Sangat Aktif' : nextPoints >= 60 ? 'Aktif' : 'Perlu Pembinaan';
 
@@ -279,6 +430,9 @@ export async function recordUnifiedAttendance(
     overrides[input.userId] = updatedEval;
     if (cleanNpm) overrides[cleanNpm] = updatedEval;
     localStorage.setItem(EVALUATIONS_OVERRIDES_KEY, JSON.stringify(overrides));
+
+    // Sinkronkan ke cloud API agar perangkat lain (desktop/mobile peer) langsung menerima poin terbaru
+    saveEvaluationCloud(updatedEval).catch(() => {});
   } catch (e) {
     console.warn('Gagal mengupdate evaluasi:', e);
   }
@@ -330,6 +484,10 @@ export async function recordUnifiedAttendance(
         })
       );
     }
+    // Broadcast Realtime Mesh Lintas Perangkat (Desktop & Mobile HP)
+    try {
+      broadcastAttendanceRecorded(attRecord, updatedEval);
+    } catch {}
   } catch {}
 
   // 6. Simpan ke Supabase (jika online & kredensial valid)
@@ -350,6 +508,43 @@ export async function recordUnifiedAttendance(
 }
 
 /**
+ * Sanitasi identitas anggota:
+ * Ganti seluruh referensi akun demo "Pangki Deswa Rayhandi" menjadi "Ahmad Fauzi" dan hilangkan foto pribadinya
+ */
+export function sanitizeMemberIdentity<T extends Record<string, any>>(member: T): T {
+  if (!member || typeof member !== 'object') return member;
+  const clone: any = { ...member };
+  const rawName = String(clone.full_name || clone.fullName || clone.name || clone.member_name || clone.memberFullName || clone.author || '');
+  const rawNpm = String(clone.npm || clone.nim || clone.studentId || clone.student_id || clone.member_npm || clone.member_nim || '');
+  const userId = String(clone.user_id || clone.userId || clone.id || '');
+  const rawEmail = String(clone.email || '');
+
+  if (
+    rawName.toLowerCase().includes('pangki') ||
+    rawNpm.includes('2414101078') ||
+    userId.includes('a1111111-1111') ||
+    rawEmail.toLowerCase().includes('pangki')
+  ) {
+    const isRootAdmin = clone.role === 'superadmin' || rawName.toLowerCase().includes('super admin');
+    const targetName = isRootAdmin ? 'Ahmad Fauzi (Super Admin)' : 'Ahmad Fauzi';
+
+    clone.full_name = targetName;
+    clone.fullName = targetName;
+    clone.name = targetName;
+    clone.member_name = targetName;
+    clone.memberFullName = targetName;
+    clone.author = targetName;
+    clone.avatar_url = null;
+    clone.avatarUrl = null;
+    clone.avatar = null;
+    if (typeof clone.proof_url === 'string' && clone.proof_url.includes('avatar')) {
+      clone.proof_url = null;
+    }
+  }
+  return clone as T;
+}
+
+/**
  * Mengambil foto avatar pengguna secara cerdas dengan fallback berlapis:
  * 1. userOrItem.avatar_url (URL valid)
  * 2. localStorage: simak_avatar_{userId}
@@ -359,6 +554,22 @@ export async function recordUnifiedAttendance(
  */
 export function resolveAvatarUrl(userOrItem: any): string | null {
   if (!userOrItem) return null;
+  const rawName = String(userOrItem.full_name || userOrItem.fullName || userOrItem.name || userOrItem.member_name || '');
+  const cleanNpm = normalizeStudentId(
+    userOrItem.npm || userOrItem.nim || userOrItem.userNpm || userOrItem.member_npm
+  );
+  const userId = String(userOrItem.user_id || userOrItem.userId || userOrItem.id || '');
+  const rawEmail = String(userOrItem.email || '');
+
+  // Akun Pangki Deswa Rayhandi / Demo BPH / Super Admin tidak boleh memiliki foto avatar sama sekali
+  if (
+    rawName.toLowerCase().includes('pangki') ||
+    cleanNpm === '2414101078' ||
+    userId.includes('a1111111-1111') ||
+    rawEmail.toLowerCase().includes('pangki')
+  ) {
+    return null;
+  }
   if (
     userOrItem.avatar_url &&
     typeof userOrItem.avatar_url === 'string' &&
@@ -366,10 +577,6 @@ export function resolveAvatarUrl(userOrItem: any): string | null {
   ) {
     return userOrItem.avatar_url;
   }
-  const userId = userOrItem.user_id || userOrItem.userId || userOrItem.id;
-  const cleanNpm = normalizeStudentId(
-    userOrItem.npm || userOrItem.nim || userOrItem.userNpm
-  );
 
   if (userId) {
     try {
@@ -505,6 +712,7 @@ export function applyEvaluationsOverrides(
 
   return merged
     .filter((m) => !isSuperAdminAccount(m))
+    .map((m) => sanitizeMemberIdentity(m))
     .sort((a, b) => (b.total_points || 0) - (a.total_points || 0));
 }
 
@@ -607,7 +815,8 @@ export async function approveAttendanceSync(
         }
 
         const prevPoints = Number(currentEval?.total_points ?? 60);
-        const nextPoints = prevPoints + addedPoints;
+        // Skala poin maksimal 100
+        const nextPoints = Math.min(100, Math.max(0, prevPoints + addedPoints));
         const nextPredicate: EvaluationPredicate =
           nextPoints >= 80 ? 'Sangat Aktif' : nextPoints >= 60 ? 'Aktif' : 'Perlu Pembinaan';
 
@@ -643,6 +852,9 @@ export async function approveAttendanceSync(
         overrides[userId] = updatedEval;
         if (cleanNpm) overrides[cleanNpm] = updatedEval;
         localStorage.setItem(EVALUATIONS_OVERRIDES_KEY, JSON.stringify(overrides));
+
+        saveEvaluationCloud(updatedEval).catch(() => {});
+        broadcastAttendanceRecorded(targetUser, updatedEval);
       } catch {}
     }
   }
@@ -661,4 +873,12 @@ export async function approveAttendanceSync(
     );
   } catch {}
 }
+
+// Jalankan pembersihan cache & foto identitas lama secara otomatis saat modul dimuat di browser
+if (typeof window !== 'undefined') {
+  try {
+    purgeSuperAdminFromCache();
+  } catch {}
+}
+
 

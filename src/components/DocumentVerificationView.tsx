@@ -78,7 +78,7 @@ export const DocumentVerificationView: React.FC<DocumentVerificationViewProps> =
         } catch {}
 
         setMemberData({
-          fullName: localName || 'Pangki Deswa Rayhandi',
+          fullName: localName || 'Ahmad Fauzi',
           division: localDiv,
           role: localRole,
           totalPoints: localPoints,
@@ -86,7 +86,7 @@ export const DocumentVerificationView: React.FC<DocumentVerificationViewProps> =
         });
       } catch {
         setMemberData({
-          fullName: 'Pangki Deswa Rayhandi',
+          fullName: 'Ahmad Fauzi',
           division: 'BPH',
           role: 'admin',
           totalPoints: 95,

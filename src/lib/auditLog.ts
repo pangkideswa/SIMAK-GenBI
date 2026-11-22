@@ -31,7 +31,7 @@ const DEFAULT_AUDIT_LOGS: AuditLog[] = [
   {
     id: 'log-1',
     timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
-    actorName: 'Pangki Deswa Rayhandi',
+    actorName: 'Ahmad Fauzi',
     actorRole: 'BPH',
     actionType: 'PERIOD_ACTIVATE',
     target: 'T.A. 2026/2027 Ganjil',
@@ -40,7 +40,7 @@ const DEFAULT_AUDIT_LOGS: AuditLog[] = [
   {
     id: 'log-2',
     timestamp: new Date(Date.now() - 3600000 * 5).toISOString(),
-    actorName: 'Pangki Deswa Rayhandi',
+    actorName: 'Ahmad Fauzi',
     actorRole: 'BPH',
     actionType: 'EVENT_CREATE',
     target: 'Sosialisasi Cinta Bangga Paham (CBP) Rupiah',

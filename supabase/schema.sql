@@ -472,7 +472,7 @@ ON CONFLICT (id) DO UPDATE SET
 -- 13. SEED WHITELIST SK ANGGOTA RESMI (Mendukung NPM & NIM)
 INSERT INTO public.authorized_members (npm, nim, full_name, division, role, is_claimed)
 VALUES
-  ('2414101078', '2414101078', 'Pangki Deswa Rayhandi', 'BPH', 'admin', false),
+  ('2414101078', '2414101078', 'Ahmad Fauzi', 'BPH', 'admin', false),
   ('2214100010', '2214100010', 'Deden Kurniawan', 'Publikasi dan Sosialisasi', 'kadiv', false),
   ('2214100025', '2214100025', 'Siti Rahmawati', 'Pendidikan', 'kadiv', false),
   ('2214100033', '2214100033', 'Fajar Pratama', 'Lingkungan Hidup', 'kadiv', false),
@@ -502,13 +502,13 @@ WHERE id IN ('a1111111-1111-1111-1111-111111111111', 'b2222222-2222-2222-2222-22
 
 INSERT INTO auth.users (id, instance_id, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at, role, aud)
 VALUES
-  ('a1111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'admin@genbi-unma.ac.id', crypt('genbi123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}', '{"npm":"2414101078","nim":"2414101078","full_name":"Pangki Deswa Rayhandi","division":"BPH","role":"admin"}', NOW(), NOW(), 'authenticated', 'authenticated'),
+  ('a1111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'admin@genbi-unma.ac.id', crypt('genbi123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}', '{"npm":"2414101078","nim":"2414101078","full_name":"Ahmad Fauzi","division":"BPH","role":"admin"}', NOW(), NOW(), 'authenticated', 'authenticated'),
   ('b2222222-2222-2222-2222-222222222222', '00000000-0000-0000-0000-000000000000', 'deden@genbi-unma.ac.id', crypt('genbi123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}', '{"npm":"2214100010","nim":"2214100010","full_name":"Deden Kurniawan","division":"Publikasi dan Sosialisasi","role":"kadiv"}', NOW(), NOW(), 'authenticated', 'authenticated'),
   ('c3333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000', 'anisa@genbi-unma.ac.id', crypt('genbi123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}', '{"npm":"2214100048","nim":"2214100048","full_name":"Anisa Permata","division":"Publikasi dan Sosialisasi","role":"member"}', NOW(), NOW(), 'authenticated', 'authenticated');
 
 INSERT INTO public.profiles (id, npm, nim, email, full_name, division, role, study_program, is_activated)
 VALUES
-  ('a1111111-1111-1111-1111-111111111111', '2414101078', '2414101078', 'admin@genbi-unma.ac.id', 'Pangki Deswa Rayhandi', 'BPH', 'admin', 'Informatika', TRUE),
+  ('a1111111-1111-1111-1111-111111111111', '2414101078', '2414101078', 'admin@genbi-unma.ac.id', 'Ahmad Fauzi', 'BPH', 'admin', 'Informatika', TRUE),
   ('b2222222-2222-2222-2222-222222222222', '2214100010', '2214100010', 'deden@genbi-unma.ac.id', 'Deden Kurniawan', 'Publikasi dan Sosialisasi', 'kadiv', 'Sistem Informasi', TRUE),
   ('c3333333-3333-3333-3333-333333333333', '2214100048', '2214100048', 'anisa@genbi-unma.ac.id', 'Anisa Permata', 'Publikasi dan Sosialisasi', 'member', 'Manajemen', TRUE)
 ON CONFLICT (id) DO UPDATE SET

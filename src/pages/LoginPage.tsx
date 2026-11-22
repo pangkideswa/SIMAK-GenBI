@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   IdCard,
   Lock,
@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { verifyUserPin } from '../lib/authSecurity';
+import { sanitizeMemberIdentity } from '../lib/attendanceSync';
+import { checkRateLimit, recordFailedAttempt, resetRateLimit } from '../lib/rateLimiter';
 import { SatelliteLoader } from '../components/SatelliteLoader';
 import { InteractiveLoginBackground } from '../components/InteractiveLoginBackground';
 import { Footer } from '../components/Footer';
@@ -114,6 +116,32 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [successMessage, setSuccessMessage] = useState('');
   const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
   const [isResending, setIsResending] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+
+  // Countdown timer untuk rate limiting lockout
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => {
+        if (prev <= 1) {
+          setErrorMessage('');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownSeconds]);
+
+  // Cek apakah akun sedang terkunci saat NPM diinput
+  useEffect(() => {
+    if (identifier.trim()) {
+      const rateStatus = checkRateLimit('login_' + identifier.trim(), 5, 30);
+      if (rateStatus.isLocked && rateStatus.retryAfterSeconds > 0) {
+        setCooldownSeconds(rateStatus.retryAfterSeconds);
+      }
+    }
+  }, [identifier]);
 
   // Verifikasi NPM Whitelist SK
   const handleVerifyNpm = async () => {
@@ -200,7 +228,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           id: '00000000-0000-0000-0000-000000000001',
           npm: 'SUPERADMIN',
           nim: 'SUPERADMIN',
-          fullName: 'Pangki Deswa Rayhandi (Super Admin)',
+          fullName: 'Ahmad Fauzi (Super Admin)',
           division: 'BPH',
           role: 'superadmin',
         });
@@ -213,7 +241,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           id: 'a1111111-1111-1111-1111-111111111111',
           npm: '2414101078',
           nim: '2414101078',
-          fullName: 'Pangki Deswa Rayhandi',
+          fullName: 'Ahmad Fauzi',
           division: 'BPH',
           role: 'admin',
         });
@@ -263,6 +291,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       return;
     }
 
+    // 0. Cek Proteksi Brute-Force Rate Limiting (5x salah -> kunci 30 detik)
+    const rateCheck = checkRateLimit('login_' + identifier.trim(), 5, 30);
+    if (rateCheck.isLocked) {
+      setCooldownSeconds(rateCheck.retryAfterSeconds);
+      setErrorMessage(
+        `Akun terkunci sementara karena 5x percobaan gagal. Silakan tunggu ${rateCheck.retryAfterSeconds} detik.`
+      );
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -280,7 +318,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             id: '00000000-0000-0000-0000-000000000001',
             npm: 'SUPERADMIN',
             nim: 'SUPERADMIN',
-            fullName: 'Pangki Deswa Rayhandi (Super Admin)',
+            fullName: 'Ahmad Fauzi (Super Admin)',
             division: 'BPH',
             role: 'superadmin',
           });
@@ -291,8 +329,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       // Cek apakah akun pengujian default yang diinput
       const isDemoAdmin =
         (emailToLogin === '2414101078' ||
-          emailToLogin === 'admin@genbi-unma.ac.id' ||
-          emailToLogin === 'pangkiajaa@gmail.com') &&
+          emailToLogin === 'admin@genbi-unma.ac.id') &&
         (pin === 'genbi123' || pin.length >= 6);
       const isDemoKadiv = emailToLogin === '2214100010' && (pin === 'genbi123' || pin.length >= 6);
       const isDemoMember = emailToLogin === '2214100048' && (pin === 'genbi123' || pin.length >= 6);
@@ -359,7 +396,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             id: 'a1111111-1111-1111-1111-111111111111',
             npm: '2414101078',
             nim: '2414101078',
-            fullName: ov?.full_name || 'Pangki Deswa Rayhandi',
+            fullName: ov?.full_name || 'Ahmad Fauzi',
             division: ov?.division || 'BPH',
             role: ov?.role || 'admin',
           });
@@ -415,17 +452,32 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         } catch {}
         const ov = localOverrides[studentId];
 
-        onLoginSuccess({
-          id: authData.user.id,
-          npm: studentId,
-          nim: studentId,
-          fullName: ov?.full_name || profile?.full_name || authData.user.user_metadata?.full_name || 'Anggota GenBI',
-          division: ov?.division || profile?.division || authData.user.user_metadata?.division || 'Publikasi dan Sosialisasi',
-          role: ov?.role || (profile?.role as 'admin' | 'kadiv' | 'member') || authData.user.user_metadata?.role || 'member',
-        });
+        resetRateLimit('login_' + identifier.trim());
+        onLoginSuccess(
+          sanitizeMemberIdentity({
+            id: authData.user.id,
+            npm: studentId,
+            nim: studentId,
+            fullName: ov?.full_name || profile?.full_name || authData.user.user_metadata?.full_name || 'Anggota GenBI',
+            division: ov?.division || profile?.division || authData.user.user_metadata?.division || 'Publikasi dan Sosialisasi',
+            role: ov?.role || (profile?.role as 'admin' | 'kadiv' | 'member') || authData.user.user_metadata?.role || 'member',
+          })
+        );
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'Gagal masuk. Periksa kembali NPM/Email dan Password Anda.');
+      const failCheck = recordFailedAttempt('login_' + identifier.trim(), 5, 30);
+      if (failCheck.isLocked) {
+        setCooldownSeconds(failCheck.retryAfterSeconds);
+        setErrorMessage(
+          `Terlalu banyak percobaan PIN salah (5x). Akses login dikunci sementara selama ${failCheck.retryAfterSeconds} detik demi keamanan.`
+        );
+      } else if (failCheck.remainingAttempts <= 2) {
+        setErrorMessage(
+          `${err.message || 'Gagal masuk.'} (Tersisa ${failCheck.remainingAttempts} kesempatan sebelum login dikunci sementara)`
+        );
+      } else {
+        setErrorMessage(err.message || 'Gagal masuk. Periksa kembali NPM/Email dan PIN Anda.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -585,13 +637,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               <p className={`text-xs sm:text-sm font-medium ${isDark ? 'text-slate-300' : 'text-slate-500'}`}>
                 Sistem Informasi Manajemen & Keaktifan GenBI
               </p>
-              <p
-                className={`text-[10px] font-bold uppercase tracking-wider ${
-                  isDark ? 'text-cyan-300/80' : 'text-slate-400'
-                }`}
-              >
-                Komisariat Universitas Majalengka &bull; KPw BI Cirebon
-              </p>
             </div>
           </div>
 
@@ -707,9 +752,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </div>
               </div>
 
+              {cooldownSeconds > 0 && (
+                <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
+                  <Lock className="w-4 h-4 shrink-0 text-rose-400" />
+                  <span>
+                    Login terkunci sementara karena 5x salah PIN. Mohon tunggu <strong>{cooldownSeconds} detik</strong>.
+                  </span>
+                </div>
+              )}
+
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || cooldownSeconds > 0}
                 className={`w-full mt-2 py-3.5 px-4 text-white text-sm font-bold rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer active:scale-[0.98] ${
                   isDark
                     ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 shadow-blue-600/30'
@@ -720,6 +774,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                   <>
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     <span>Memverifikasi Akun...</span>
+                  </>
+                ) : cooldownSeconds > 0 ? (
+                  <>
+                    <Lock className="w-4 h-4 text-rose-200" />
+                    <span>Login Terkunci ({cooldownSeconds}s)</span>
                   </>
                 ) : (
                   <>
@@ -758,7 +817,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                       🛡️ BPH
                     </span>
                     <span className={`text-[9px] block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                      Pangki Deswa
+                      Ahmad Fauzi
                     </span>
                   </button>
                   <button
@@ -970,7 +1029,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       </div>
 
       {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
-      <Footer className={`border-t-0 bg-transparent py-4 transition-colors ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
+      <Footer showInstitution className={`border-t-0 bg-transparent py-4 transition-colors ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
 
       {/* Modal Dialog Lupa PIN / Reset Password */}
       {showForgotModal && (

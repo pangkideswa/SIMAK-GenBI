@@ -43,6 +43,7 @@ import { syncMemberUpdate, normalizeStudentId } from '../lib/memberSync';
 import { formatDateTimeWIB, toDatetimeLocalWIB } from '../lib/dateUtils';
 import { WibDateTimePicker } from '../components/WibDateTimePicker';
 import { MemberReportModal } from '../components/MemberReportModal';
+import { AttendanceSheetModal } from '../components/AttendanceSheetModal';
 import { MubesAwardsManager } from '../components/MubesAwardsManager';
 import { recordAuditLog } from '../lib/auditLog';
 import {
@@ -65,11 +66,14 @@ import {
   filterDeletedEvents,
   toggleEventLock,
 } from '../lib/eventSync';
+import { fetchEventsCloud, fetchEvaluationsCloud, initMeshSync } from '../lib/meshSync';
 import { getAcademicPeriods, AcademicPeriod } from '../lib/periodSync';
 import { Footer } from '../components/Footer';
 import {
   recordUnifiedAttendance,
   applyEvaluationsOverrides,
+  sanitizeMemberIdentity,
+  resolveAvatarUrl,
   approveAttendanceSync,
   isSuperAdminAccount,
   purgeSuperAdminFromCache,
@@ -207,7 +211,7 @@ const DEFAULT_SAMPLE_LEADERBOARD: MemberEvaluation[] = [
     npm: '2414101078',
     nim: '2414101078',
     email: 'admin@genbi-unma.ac.id',
-    full_name: 'Pangki Deswa Rayhandi',
+    full_name: 'Ahmad Fauzi',
     division: 'Pengabdian Masyarakat',
     role: 'member',
     avatar_url: null,
@@ -309,7 +313,7 @@ const DEFAULT_SAMPLE_WHITELIST: Array<{
   is_claimed: boolean;
   created_at: string;
 }> = [
-  { npm: '2414101078', nim: '2414101078', full_name: 'Pangki Deswa Rayhandi', division: 'Pengabdian Masyarakat', role: 'member', is_claimed: true, created_at: new Date().toISOString() },
+  { npm: '2414101078', nim: '2414101078', full_name: 'Ahmad Fauzi', division: 'Pengabdian Masyarakat', role: 'member', is_claimed: true, created_at: new Date().toISOString() },
   { npm: '2214100010', nim: '2214100010', full_name: 'Deden Kurniawan', division: 'Publikasi dan Sosialisasi', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
   { npm: '2214100025', nim: '2214100025', full_name: 'Siti Rahmawati', division: 'Pendidikan', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
   { npm: '2214100033', nim: '2214100033', full_name: 'Fajar Pratama', division: 'Lingkungan Hidup', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
@@ -412,6 +416,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [searchMember, setSearchMember] = useState('');
   const [selectedDivisionFilter, setSelectedDivisionFilter] = useState<string>('Semua');
   const [selectedReportMember, setSelectedReportMember] = useState<MemberEvaluation | null>(null);
+  const [selectedEventForPrintAttendance, setSelectedEventForPrintAttendance] = useState<{
+    event: any;
+    participants: any[];
+  } | null>(null);
 
   // Whitelist SK Anggota State
   const [whitelistMembers, setWhitelistMembers] = useState<Array<{
@@ -454,14 +462,16 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [editWhiteJabatan, setEditWhiteJabatan] = useState<string>('Anggota');
   const [isUpdatingWhitelist, setIsUpdatingWhitelist] = useState(false);
 
-  // Fetch Data Awal Asli Supabase
+  // Fetch Data Awal Asli Supabase & Cloud Mesh
   const loadAdminData = async () => {
     try {
-      // 1. Ambil Events Asli dengan Overrides Lokal
+      // 1. Ambil Events Asli dengan Overrides Lokal & Cloud Sync
       const { data: eventData } = await supabase
         .from('events')
         .select('*')
         .order('event_date', { ascending: false });
+
+      const cloudEvents = await fetchEventsCloud();
 
       let eventOverrides: Record<string, any> = {};
       try {
@@ -469,27 +479,47 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         if (raw) eventOverrides = JSON.parse(raw);
       } catch {}
 
-      const baseEvents = (eventData && eventData.length > 0) ? eventData : DEFAULT_SAMPLE_EVENTS;
+      const baseEvents = (eventData && eventData.length > 0)
+        ? eventData
+        : (cloudEvents && cloudEvents.length > 0)
+        ? cloudEvents
+        : DEFAULT_SAMPLE_EVENTS;
+
       const mergedEvents = baseEvents.map((ev: any) => {
         const ov = eventOverrides[ev.id];
         return ov ? { ...ev, ...ov } : ev;
       });
+
+      if (cloudEvents && cloudEvents.length > 0) {
+        for (const ce of cloudEvents) {
+          if (!mergedEvents.some((e: any) => e.id === ce.id)) {
+            mergedEvents.unshift(ce);
+          }
+        }
+      }
+
       // Masukkan juga event yang dibuat lokal jika belum ada di database
       for (const [ovId, ovEv] of Object.entries(eventOverrides)) {
         if (!mergedEvents.some((e: any) => e.id === ovId)) {
           mergedEvents.unshift(ovEv);
         }
       }
-      setEvents(filterDeletedEvents(mergedEvents as EventType[]));
+      const validEvents = mergedEvents.filter((ev: any) => ev.category !== 'mubes-system');
+      setEvents(filterDeletedEvents(validEvents as EventType[]));
 
-      // 2. Ambil Rekap Keaktifan Seluruh Anggota (Terpadu Supabase + Overrides Permanen)
+      // 2. Ambil Rekap Keaktifan Seluruh Anggota (Terpadu Supabase + Overrides Permanen + Cloud API)
+      const cloudEvals = await fetchEvaluationsCloud();
       const { data: evalData } = await supabase
         .from('member_evaluations')
         .select('*')
         .order('total_points', { ascending: false });
 
-      const baseEvals = (evalData && evalData.length > 0) ? (evalData as MemberEvaluation[]) : DEFAULT_SAMPLE_LEADERBOARD;
-      setEvaluations(applyEvaluationsOverrides(baseEvals).filter((m) => !isSuperAdminAccount(m)));
+      const baseEvals = (evalData && evalData.length > 0)
+        ? (evalData as MemberEvaluation[])
+        : (cloudEvals && cloudEvals.length > 0)
+        ? (cloudEvals as MemberEvaluation[])
+        : DEFAULT_SAMPLE_LEADERBOARD;
+      setEvaluations(applyEvaluationsOverrides(baseEvals).filter((m) => !isSuperAdminAccount(m)).map((m) => sanitizeMemberIdentity(m)));
 
       // 3. Ambil Pengajuan Izin & Delegasi Menunggu Verifikasi
       const { data: attData } = await supabase
@@ -536,7 +566,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             } catch {}
           }
 
-          return {
+          return sanitizeMemberIdentity({
             id: a.id,
             user_id: a.user_id,
             event_id: a.event_id,
@@ -552,7 +582,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             user_lng: a.user_lng || delegasiMeta?.lng,
             isDelegasi,
             delegasiData: delegasiMeta,
-          };
+          });
         });
       }
 
@@ -681,10 +711,24 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         const raw = localStorage.getItem('simak_events_overrides');
         if (raw) fallbackOverrides = JSON.parse(raw);
       } catch {}
-      const mergedFallback = DEFAULT_SAMPLE_EVENTS.map((ev: any) => {
+
+      let cloudList: EventType[] | null = null;
+      try {
+        cloudList = await fetchEventsCloud();
+      } catch {}
+
+      const baseList = (cloudList && cloudList.length > 0) ? cloudList : DEFAULT_SAMPLE_EVENTS;
+      const mergedFallback = baseList.map((ev: any) => {
         const ov = fallbackOverrides[ev.id];
         return ov ? { ...ev, ...ov } : ev;
       });
+      if (cloudList && cloudList.length > 0) {
+        for (const ce of cloudList) {
+          if (!mergedFallback.some((e: any) => e.id === ce.id)) {
+            mergedFallback.unshift(ce);
+          }
+        }
+      }
       for (const [ovId, ovEv] of Object.entries(fallbackOverrides)) {
         if (!mergedFallback.some((e: any) => e.id === ovId)) {
           mergedFallback.unshift(ovEv);
@@ -732,7 +776,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         };
       });
 
-      setWhitelistMembers(merged);
+      setWhitelistMembers(merged.map((m: any) => sanitizeMemberIdentity(m)));
     } catch {
       let overrides: Record<string, any> = {};
       try {
@@ -743,12 +787,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setWhitelistMembers(
         DEFAULT_SAMPLE_WHITELIST.map((d: any) => {
           const studentId = normalizeStudentId(d.npm || d.nim);
-          return {
+          return sanitizeMemberIdentity({
             ...d,
             npm: studentId,
             nim: studentId,
             ...(overrides[studentId] || {}),
-          };
+          });
         })
       );
     } finally {
@@ -1152,6 +1196,21 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       );
     };
 
+    const cleanupMesh = initMeshSync({
+      onEventMutated: (ev) => {
+        handleEventSync({ detail: ev });
+      },
+      onEventDeleted: (eventId) => {
+        handleEventDeleted({ detail: { id: eventId } });
+      },
+      onAttendanceMutated: (record) => {
+        handleAttSubmitted({ detail: record });
+      },
+      onAttendanceDeleted: (attId, evId) => {
+        handleAttDeleted({ detail: { id: attId, eventId: evId } });
+      },
+    });
+
     window.addEventListener('simak_member_sync', handleSyncEvent);
     window.addEventListener('simak_event_sync', handleEventSync);
     window.addEventListener('simak_event_lock_sync', handleLockSync);
@@ -1160,12 +1219,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     window.addEventListener('simak_attendance_submitted', handleAttSubmitted);
     window.addEventListener('simak_attendance_sync', handleAttSubmitted);
     window.addEventListener('simak_evaluations_sync', handleAttSubmitted);
+    window.addEventListener('simak_leaderboard_sync', handleAttSubmitted);
     window.addEventListener('simak_period_sync', handlePeriodSync);
     window.addEventListener('simak_avatar_updated', handleAvatarUpdated);
     window.addEventListener('simak_jabatan_sync', handleJabatanSync);
     window.addEventListener('simak_division_sync', handleDivisionSync);
 
     return () => {
+      cleanupMesh();
       window.removeEventListener('simak_member_sync', handleSyncEvent);
       window.removeEventListener('simak_event_sync', handleEventSync);
       window.removeEventListener('simak_event_lock_sync', handleLockSync);
@@ -1232,7 +1293,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           }
         } catch {}
 
-        setParticipants(filterDeletedAttendances(enrichedList));
+        setParticipants(filterDeletedAttendances(enrichedList).map((p) => sanitizeMemberIdentity(p) as EventParticipant));
       } else {
         // Fallback: periksa cache lokal bersama jika Supabase belum ada data
         try {
@@ -1241,7 +1302,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             const parsed = JSON.parse(localAll);
             const matched = parsed.filter((p: any) => p.event_id === eventItem.id);
             if (matched.length > 0) {
-              setParticipants(filterDeletedAttendances(matched));
+              setParticipants(filterDeletedAttendances(matched).map((p) => sanitizeMemberIdentity(p) as EventParticipant));
               return;
             }
           }
@@ -1255,7 +1316,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           const parsed = JSON.parse(localAll);
           const matched = parsed.filter((p: any) => p.event_id === eventItem.id);
           if (matched.length > 0) {
-            setParticipants(filterDeletedAttendances(matched));
+            setParticipants(filterDeletedAttendances(matched).map((p) => sanitizeMemberIdentity(p) as EventParticipant));
             return;
           }
         }
@@ -1924,6 +1985,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   const filteredEvaluations = evaluations
     .filter((ev) => !isSuperAdminAccount(ev))
+    .map((ev) => sanitizeMemberIdentity(ev))
     .filter((ev) => {
       const studentId = ev.npm || ev.nim || '';
       const matchesSearch =
@@ -2678,7 +2740,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredEvaluations.map((m) => {
+                        {filteredEvaluations.map((rawM) => {
+                          const m = sanitizeMemberIdentity(rawM);
                           const predColor =
                             m.predicate === 'Sangat Aktif'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -2692,9 +2755,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                             <tr key={m.user_id} className="hover:bg-slate-50/70 transition">
                               <td className="py-2.5 px-3.5">
                                 <div className="flex items-center gap-2.5">
-                                  {m.avatar_url ? (
+                                  {resolveAvatarUrl(m) ? (
                                     <img
-                                      src={m.avatar_url}
+                                      src={resolveAvatarUrl(m)!}
                                       alt=""
                                       className="w-7 h-7 rounded-full object-cover shrink-0 border border-slate-200"
                                     />
@@ -2798,147 +2861,159 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-4">
                     {/* JUARA 2 (PERAK) - Kiri */}
-                    {evaluations[1] && (
-                      <div className="order-2 md:order-1 p-5 rounded-3xl bg-white/90 backdrop-blur-md border border-slate-200/80 shadow-md flex flex-col items-center text-center space-y-3 relative overflow-hidden">
-                        <div className="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-black uppercase">
-                          🥈 Peringkat #2
-                        </div>
-                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-200 to-slate-100 ring-4 ring-slate-300 shadow-md flex items-center justify-center text-slate-700 font-black text-xl mt-2 overflow-hidden relative">
-                          {evaluations[1].avatar_url ? (
-                            <img
-                              src={evaluations[1].avatar_url}
-                              alt={evaluations[1].full_name}
-                              className="w-full h-full object-cover"
-                              crossOrigin="anonymous"
-                            />
-                          ) : (
-                            evaluations[1].full_name.charAt(0)
-                          )}
-                        </div>
-                        <div className="space-y-0.5">
-                          <h4 className="text-sm font-black text-slate-900 line-clamp-1">
-                            {evaluations[1].full_name}
-                          </h4>
-                          <p className="text-[11px] text-slate-500 font-medium">
-                            {evaluations[1].division} &bull; {resolveUserJabatan(evaluations[1])}
-                          </p>
-                        </div>
-                        <div className="w-full py-2 px-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-around text-xs">
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold block">TOTAL POIN</span>
-                            <span className="font-black text-slate-800 text-sm">{evaluations[1].total_points} P</span>
+                    {evaluations[1] && (() => {
+                      const p1 = sanitizeMemberIdentity(evaluations[1]);
+                      const p1Avatar = resolveAvatarUrl(p1);
+                      return (
+                        <div className="order-2 md:order-1 p-5 rounded-3xl bg-white/90 backdrop-blur-md border border-slate-200/80 shadow-md flex flex-col items-center text-center space-y-3 relative overflow-hidden">
+                          <div className="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-black uppercase">
+                            🥈 Peringkat #2
                           </div>
-                          <div className="w-px h-6 bg-slate-200" />
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold block">KEHADIRAN</span>
-                            <span className="font-black text-slate-800 text-sm">{evaluations[1].attendance_percentage}%</span>
+                          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-200 to-slate-100 ring-4 ring-slate-300 shadow-md flex items-center justify-center text-slate-700 font-black text-xl mt-2 overflow-hidden relative">
+                            {p1Avatar ? (
+                              <img
+                                src={p1Avatar}
+                                alt={p1.full_name}
+                                className="w-full h-full object-cover"
+                                crossOrigin="anonymous"
+                              />
+                            ) : (
+                              p1.full_name.charAt(0)
+                            )}
                           </div>
+                          <div className="space-y-0.5">
+                            <h4 className="text-sm font-black text-slate-900 line-clamp-1">
+                              {p1.full_name}
+                            </h4>
+                            <p className="text-[11px] text-slate-500 font-medium">
+                              {p1.division} &bull; {resolveUserJabatan(p1)}
+                            </p>
+                          </div>
+                          <div className="w-full py-2 px-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-around text-xs">
+                            <div>
+                              <span className="text-[10px] text-slate-400 font-bold block">TOTAL POIN</span>
+                              <span className="font-black text-slate-800 text-sm">{p1.total_points} P</span>
+                            </div>
+                            <div className="w-px h-6 bg-slate-200" />
+                            <div>
+                              <span className="text-[10px] text-slate-400 font-bold block">KEHADIRAN</span>
+                              <span className="font-black text-slate-800 text-sm">{p1.attendance_percentage}%</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setSelectedReportMember(p1)}
+                            className="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-slate-600" />
+                            <span>Cetak Rapor PDF</span>
+                          </button>
                         </div>
-                        <button
-                          onClick={() => setSelectedReportMember(evaluations[1])}
-                          className="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Printer className="w-3.5 h-3.5 text-slate-600" />
-                          <span>Cetak Rapor PDF</span>
-                        </button>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* JUARA 1 (EMAS) - Tengah (Highlight Spotlight) */}
-                    {evaluations[0] && (
-                      <div className="order-1 md:order-2 p-6 rounded-3xl bg-gradient-to-b from-amber-50/80 via-white to-white border-2 border-amber-300 shadow-xl shadow-amber-500/10 flex flex-col items-center text-center space-y-3.5 relative overflow-hidden -translate-y-2">
-                        <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500" />
-                        <div className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 text-xs font-black uppercase flex items-center gap-1 shadow-xs">
-                          <Crown className="w-3.5 h-3.5 fill-slate-950" />
-                          <span>🥇 JUARA #1 TERAKTIF</span>
-                        </div>
-                        <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-400 to-yellow-200 ring-4 ring-amber-300 shadow-lg flex items-center justify-center text-slate-950 font-black text-2xl overflow-hidden relative">
-                          {evaluations[0].avatar_url ? (
-                            <img
-                              src={evaluations[0].avatar_url}
-                              alt={evaluations[0].full_name}
-                              className="w-full h-full object-cover"
-                              crossOrigin="anonymous"
-                            />
-                          ) : (
-                            evaluations[0].full_name.charAt(0)
-                          )}
-                        </div>
-                        <div className="space-y-0.5">
-                          <h4 className="text-base font-black text-slate-900 line-clamp-1">
-                            {evaluations[0].full_name}
-                          </h4>
-                          <p className="text-xs text-amber-700 font-bold">
-                            {evaluations[0].division} &bull; {resolveUserJabatan(evaluations[0])}
-                          </p>
-                        </div>
-                        <div className="w-full py-2.5 px-4 rounded-2xl bg-amber-50/80 border border-amber-200/80 flex items-center justify-around text-xs">
-                          <div>
-                            <span className="text-[10px] text-amber-800 font-bold block">TOTAL POIN</span>
-                            <span className="font-black text-amber-900 text-base">{evaluations[0].total_points} Poin</span>
+                    {evaluations[0] && (() => {
+                      const p0 = sanitizeMemberIdentity(evaluations[0]);
+                      const p0Avatar = resolveAvatarUrl(p0);
+                      return (
+                        <div className="order-1 md:order-2 p-6 rounded-3xl bg-gradient-to-b from-amber-50/80 via-white to-white border-2 border-amber-300 shadow-xl shadow-amber-500/10 flex flex-col items-center text-center space-y-3.5 relative overflow-hidden -translate-y-2">
+                          <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500" />
+                          <div className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 text-xs font-black uppercase flex items-center gap-1 shadow-xs">
+                            <Crown className="w-3.5 h-3.5 fill-slate-950" />
+                            <span>🥇 JUARA #1 TERAKTIF</span>
                           </div>
-                          <div className="w-px h-7 bg-amber-200" />
-                          <div>
-                            <span className="text-[10px] text-amber-800 font-bold block">KEHADIRAN</span>
-                            <span className="font-black text-amber-900 text-base">{evaluations[0].attendance_percentage}%</span>
+                          <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-400 to-yellow-200 ring-4 ring-amber-300 shadow-lg flex items-center justify-center text-slate-950 font-black text-2xl overflow-hidden relative">
+                            {p0Avatar ? (
+                              <img
+                                src={p0Avatar}
+                                alt={p0.full_name}
+                                className="w-full h-full object-cover"
+                                crossOrigin="anonymous"
+                              />
+                            ) : (
+                              p0.full_name.charAt(0)
+                            )}
                           </div>
+                          <div className="space-y-0.5">
+                            <h4 className="text-base font-black text-slate-900 line-clamp-1">
+                              {p0.full_name}
+                            </h4>
+                            <p className="text-xs text-amber-700 font-bold">
+                              {p0.division} &bull; {resolveUserJabatan(p0)}
+                            </p>
+                          </div>
+                          <div className="w-full py-2.5 px-4 rounded-2xl bg-amber-50/80 border border-amber-200/80 flex items-center justify-around text-xs">
+                            <div>
+                              <span className="text-[10px] text-amber-800 font-bold block">TOTAL POIN</span>
+                              <span className="font-black text-amber-900 text-base">{p0.total_points} Poin</span>
+                            </div>
+                            <div className="w-px h-7 bg-amber-200" />
+                            <div>
+                              <span className="text-[10px] text-amber-800 font-bold block">KEHADIRAN</span>
+                              <span className="font-black text-amber-900 text-base">{p0.attendance_percentage}%</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setSelectedReportMember(p0)}
+                            className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-blue-600/20"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Cetak Rapor Beasiswa BI (PDF)</span>
+                          </button>
                         </div>
-                        <button
-                          onClick={() => setSelectedReportMember(evaluations[0])}
-                          className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-blue-600/20"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>Cetak Rapor Beasiswa BI (PDF)</span>
-                        </button>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* JUARA 3 (PERUNGGU) - Kanan */}
-                    {evaluations[2] && (
-                      <div className="order-3 p-5 rounded-3xl bg-white/90 backdrop-blur-md border border-slate-200/80 shadow-md flex flex-col items-center text-center space-y-3 relative overflow-hidden">
-                        <div className="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase">
-                          🥉 Peringkat #3
-                        </div>
-                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-200 to-amber-100 ring-4 ring-amber-700/30 shadow-md flex items-center justify-center text-amber-900 font-black text-xl mt-2 overflow-hidden relative">
-                          {evaluations[2].avatar_url ? (
-                            <img
-                              src={evaluations[2].avatar_url}
-                              alt={evaluations[2].full_name}
-                              className="w-full h-full object-cover"
-                              crossOrigin="anonymous"
-                            />
-                          ) : (
-                            evaluations[2].full_name.charAt(0)
-                          )}
-                        </div>
-                        <div className="space-y-0.5">
-                          <h4 className="text-sm font-black text-slate-900 line-clamp-1">
-                            {evaluations[2].full_name}
-                          </h4>
-                          <p className="text-[11px] text-slate-500 font-medium">
-                            {evaluations[2].division} &bull; {resolveUserJabatan(evaluations[2])}
-                          </p>
-                        </div>
-                        <div className="w-full py-2 px-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-around text-xs">
+                    {evaluations[2] && (() => {
+                      const p2 = sanitizeMemberIdentity(evaluations[2]);
+                      const p2Avatar = resolveAvatarUrl(p2);
+                      return (
+                        <div className="order-3 p-5 rounded-3xl bg-white/90 backdrop-blur-md border border-slate-200/80 shadow-md flex flex-col items-center text-center space-y-3 relative overflow-hidden">
+                          <div className="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase">
+                            🥉 Peringkat #3
+                          </div>
+                          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-200 to-amber-100 ring-4 ring-amber-700/30 shadow-md flex items-center justify-center text-amber-900 font-black text-xl mt-2 overflow-hidden relative">
+                            {p2Avatar ? (
+                              <img
+                                src={p2Avatar}
+                                alt={p2.full_name}
+                                className="w-full h-full object-cover"
+                                crossOrigin="anonymous"
+                              />
+                            ) : (
+                              p2.full_name.charAt(0)
+                            )}
+                          </div>
+                          <div className="space-y-0.5">
+                            <h4 className="text-sm font-black text-slate-900 line-clamp-1">
+                              {p2.full_name}
+                            </h4>
+                            <p className="text-[11px] text-slate-500 font-medium">
+                              {p2.division} &bull; {resolveUserJabatan(p2)}
+                            </p>
+                          </div>
+                          <div className="w-full py-2 px-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-around text-xs">
                           <div>
                             <span className="text-[10px] text-slate-400 font-bold block">TOTAL POIN</span>
-                            <span className="font-black text-slate-800 text-sm">{evaluations[2].total_points} P</span>
+                            <span className="font-black text-slate-800 text-sm">{p2.total_points} P</span>
                           </div>
                           <div className="w-px h-6 bg-slate-200" />
                           <div>
                             <span className="text-[10px] text-slate-400 font-bold block">KEHADIRAN</span>
-                            <span className="font-black text-slate-800 text-sm">{evaluations[2].attendance_percentage}%</span>
+                            <span className="font-black text-slate-800 text-sm">{p2.attendance_percentage}%</span>
                           </div>
                         </div>
-                        <button
-                          onClick={() => setSelectedReportMember(evaluations[2])}
-                          className="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <Printer className="w-3.5 h-3.5 text-slate-600" />
-                          <span>Cetak Rapor PDF</span>
-                        </button>
-                      </div>
-                    )}
+                          <button
+                            onClick={() => setSelectedReportMember(p2)}
+                            className="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5 text-slate-600" />
+                            <span>Cetak Rapor PDF</span>
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -2989,7 +3064,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium">
-                      {filteredEvaluations.map((ev, index) => {
+                      {filteredEvaluations.map((rawEv, index) => {
+                        const ev = sanitizeMemberIdentity(rawEv);
                         const isTop1 = index === 0;
                         const isTop2 = index === 1;
                         const isTop3 = index === 2;
@@ -3021,15 +3097,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                             <td className="py-3.5 px-4">
                               <div className="flex items-center gap-3">
-                                {ev.avatar_url ? (
+                                {resolveAvatarUrl(ev) ? (
                                   <img
-                                    src={ev.avatar_url}
+                                    src={resolveAvatarUrl(ev)!}
                                     alt={ev.full_name}
                                     className="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-200 shadow-xs"
                                     crossOrigin="anonymous"
                                   />
                                 ) : (
-                                  <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
+                                  <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200 shadow-xs">
                                     {ev.full_name?.charAt(0)}
                                   </div>
                                 )}
@@ -3167,7 +3243,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {whitelistMembers.map((w) => {
+                      {whitelistMembers.map((rawW) => {
+                        const w = sanitizeMemberIdentity(rawW);
                         const identifier = w.npm || w.nim || '-';
                         return (
                           <tr key={identifier} className="hover:bg-blue-50/30 transition">
@@ -3644,14 +3721,28 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowManualAttendanceModal(!showManualAttendanceModal)}
-                className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 flex items-center gap-1.5 transition cursor-pointer self-start sm:self-center"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>+ Presensi Manual</span>
-              </button>
+              <div className="flex items-center gap-2 self-start sm:self-center flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setSelectedEventForPrintAttendance({
+                    event: selectedEventForParticipants,
+                    participants,
+                  })}
+                  className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                  title="Cetak Berita Acara & Daftar Hadir Fisik (PDF / Print)"
+                >
+                  <Printer className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Cetak Daftar Hadir</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowManualAttendanceModal(!showManualAttendanceModal)}
+                  className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>+ Presensi Manual</span>
+                </button>
+              </div>
             </div>
 
             {/* Form Presensi Manual (Jika Dibuka) */}
@@ -4065,7 +4156,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 NPM, Nama Lengkap, Divisi, Role (Opsional: member/kadiv/admin)
               </p>
               <p className="text-[10px] text-slate-400">
-                Contoh: <code>2414101078, Pangki Deswa Rayhandi, Publikasi dan Sosialisasi, kadiv</code>
+                Contoh: <code>2414101078, Ahmad Fauzi, Publikasi dan Sosialisasi, kadiv</code>
               </p>
             </div>
 
@@ -4081,6 +4172,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
+                      if (file.size > 2 * 1024 * 1024) {
+                        showToast('Ukuran berkas CSV maksimal 2 MB.', 'warning');
+                        e.target.value = '';
+                        return;
+                      }
                       const reader = new FileReader();
                       reader.onload = (event) => {
                         const content = event.target?.result as string;
@@ -4199,6 +4295,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         <MemberReportModal
           evaluation={selectedReportMember}
           onClose={() => setSelectedReportMember(null)}
+        />
+      )}
+
+      {/* Modal Cetak Berita Acara & Daftar Hadir Presensi Kegiatan */}
+      {selectedEventForPrintAttendance && (
+        <AttendanceSheetModal
+          event={selectedEventForPrintAttendance.event}
+          participants={selectedEventForPrintAttendance.participants}
+          onClose={() => setSelectedEventForPrintAttendance(null)}
         />
       )}
 

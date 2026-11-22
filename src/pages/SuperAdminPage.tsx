@@ -57,7 +57,7 @@ import {
   clearAuditLogs,
   recordAuditLog,
 } from '../lib/auditLog';
-import { purgeSuperAdminFromCache } from '../lib/attendanceSync';
+import { purgeSuperAdminFromCache, sanitizeMemberIdentity } from '../lib/attendanceSync';
 import { AdminDashboardPage } from './AdminDashboardPage';
 import DashboardPage from './DashboardPage';
 import { Footer } from '../components/Footer';
@@ -80,7 +80,7 @@ interface MemberUser {
 }
 
 const DEFAULT_MEMBERS_ROSTER: MemberUser[] = [
-  { npm: '2414101078', nim: '2414101078', fullName: 'Pangki Deswa Rayhandi', division: 'Pengabdian Masyarakat', role: 'member', jabatan: 'Anggota', isClaimed: true, email: 'admin@genbi-unma.ac.id', source: 'whitelist' },
+  { npm: '2414101078', nim: '2414101078', fullName: 'Ahmad Fauzi', division: 'Pengabdian Masyarakat', role: 'member', jabatan: 'Anggota', isClaimed: true, email: 'admin@genbi-unma.ac.id', source: 'whitelist' },
   { npm: '2214100010', nim: '2214100010', fullName: 'Deden Kurniawan', division: 'Publikasi dan Sosialisasi', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'deden@genbi-unma.ac.id', source: 'whitelist' },
   { npm: '2214100025', nim: '2214100025', fullName: 'Siti Rahmawati', division: 'Pendidikan', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'siti@genbi-unma.ac.id', source: 'whitelist' },
   { npm: '2214100033', nim: '2214100033', fullName: 'Fajar Pratama', division: 'Lingkungan Hidup', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'fajar@genbi-unma.ac.id', source: 'whitelist' },
@@ -232,7 +232,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         }
       } catch {}
 
-      setMembers(Array.from(combinedMap.values()));
+      setMembers(Array.from(combinedMap.values()).map((m) => sanitizeMemberIdentity(m)));
     } finally {
       setIsLoading(false);
     }
@@ -585,7 +585,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
           system: 'SIMAK GENBI UNMA',
           version: '2.0.0',
           backupDate: new Date().toISOString(),
-          author: 'Pangki Deswa Rayhandi (Super Admin)',
+          author: 'Ahmad Fauzi (Super Admin)',
         },
         database: {
           authorized_members: authMembers,
@@ -626,6 +626,12 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Ukuran berkas cadangan JSON melebihi batas maksimal 5 MB.', 'warning');
+      e.target.value = '';
+      return;
+    }
+
     if (
       !confirm(
         `Pulihkan data sistem dari berkas "${file.name}"?\nPERINGATAN: Seluruh cache lokal, periode kepengurusan, dan data presensi akan dipulihkan sesuai berkas cadangan ini.`
@@ -656,6 +662,8 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
           if (lp.audit_logs) localStorage.setItem('simak_audit_logs', lp.audit_logs);
           if (lp.offline_queue) localStorage.setItem('simak_offline_queue', lp.offline_queue);
         }
+
+        purgeSuperAdminFromCache();
 
         showToast('Data cadangan berhasil dipulihkan! Seluruh pengguna, periode, dan riwayat presensi langsung disinkronkan.', 'success');
         loadAllUsers();
@@ -757,12 +765,12 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
     );
   };
 
-  // User session untuk BPH Panel Operasional (menggunakan akun personal resmi BPH Pangki Deswa Rayhandi)
+  // User session untuk BPH Panel Operasional (menggunakan akun personal resmi BPH Ahmad Fauzi)
   const superAdminBphUser = {
     id: 'a1111111-1111-1111-1111-111111111111',
     npm: '2414101078',
     nim: '2414101078',
-    fullName: 'Pangki Deswa Rayhandi',
+    fullName: 'Ahmad Fauzi',
     division: 'BPH' as Division,
     role: 'admin' as Role,
     email: 'admin@genbi-unma.ac.id',
@@ -773,7 +781,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
     id: `simulasi-${simulatedRole}-${simulatedDivision.replace(/\s+/g, '_').toLowerCase()}`,
     npm: simulatedRole === 'kadiv' ? '2214100010' : '2214100048',
     nim: simulatedRole === 'kadiv' ? '2214100010' : '2214100048',
-    fullName: `Pangki Deswa Rayhandi (Simulasi ${simulatedRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'})`,
+    fullName: `Ahmad Fauzi (Simulasi ${simulatedRole === 'kadiv' ? 'Kepala Divisi' : 'Anggota'})`,
     division: simulatedDivision,
     role: simulatedRole,
   };
@@ -831,7 +839,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 </span>
               </div>
               <p className="text-[9px] sm:text-[11px] text-slate-400 font-medium truncate max-w-full">
-                Pusat Kontrol Tertinggi Sistem & Pengembang Tunggal &bull; Pangki Deswa Rayhandi
+                Pusat Kontrol Tertinggi Sistem & Pengembang Tunggal &bull; Ahmad Fauzi
               </p>
             </div>
           </div>
@@ -1048,7 +1056,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60 font-medium">
-                    {filteredMembers.map((m) => (
+                    {filteredMembers.map((rawM) => {
+                      const m = sanitizeMemberIdentity(rawM);
+                      return (
                       <tr key={m.npm} className="hover:bg-blue-950/30 transition">
                         <td className="py-3 px-4 font-mono font-bold text-slate-300">
                           <span className="px-2 py-0.5 rounded-lg bg-slate-950 border border-slate-800">
@@ -1084,7 +1094,8 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1092,7 +1103,9 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
 
             {/* Tampilan Mobile (Kartu Modern Presisi Tanpa Terpotong) */}
             <div className="sm:hidden space-y-3">
-              {filteredMembers.map((m) => (
+              {filteredMembers.map((rawM) => {
+                const m = sanitizeMemberIdentity(rawM);
+                return (
                 <div
                   key={m.npm}
                   className="bg-slate-900/90 rounded-2xl p-4 border border-slate-800 space-y-3 shadow-lg"
@@ -1140,7 +1153,8 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1606,7 +1620,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
           <MubesAwardsManager
             currentUser={{
               id: 'super-admin-root',
-              fullName: 'Pangki Deswa Rayhandi (Super Admin)',
+              fullName: 'Ahmad Fauzi (Super Admin)',
               role: 'superadmin',
               npm: '2414101078',
             }}

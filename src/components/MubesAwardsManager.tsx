@@ -7,33 +7,41 @@ import {
   Vote,
   Pencil,
   X,
+  RotateCcw,
 } from 'lucide-react';
 import {
   getMubesAwardsState,
   toggleAwardsPublish,
   setCategoryWinner,
+  resetBphVotes,
+  initMubesAwardsRealtime,
+  sanitizeAwardsState,
   MUBES_AWARD_CATEGORIES,
+  DEFAULT_MUBES_AWARDS,
   MubesAwardsState,
 } from '../lib/awardsSync';
 import { normalizeStudentId } from '../lib/memberSync';
+import { sanitizeMemberIdentity } from '../lib/attendanceSync';
+
+interface BphCandidateItem {
+  npm: string;
+  nim?: string;
+  full_name?: string;
+  fullName?: string;
+  division?: string;
+  role?: string;
+  jabatan?: string;
+  total_points?: number;
+}
 
 interface MubesAwardsManagerProps {
-  currentUser: {
+  currentUser?: {
     id: string;
     fullName: string;
     role: string;
     npm?: string;
   };
-  members: Array<{
-    npm: string;
-    nim?: string;
-    full_name?: string;
-    fullName?: string;
-    division?: string;
-    role?: string;
-    jabatan?: string;
-    total_points?: number;
-  }>;
+  members?: BphCandidateItem[];
   events?: Array<{
     id: string;
     title: string;
@@ -43,12 +51,17 @@ interface MubesAwardsManagerProps {
   onToast?: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
+const DEFAULT_FALLBACK_BPH: BphCandidateItem[] = [
+  { npm: '2414101078', fullName: 'Ahmad Fauzi', full_name: 'Ahmad Fauzi', jabatan: 'Ketua Umum', division: 'BPH' },
+  { npm: '2214100010', fullName: 'Deden Kurniawan', full_name: 'Deden Kurniawan', jabatan: 'Sekretaris Umum', division: 'BPH' },
+  { npm: '2214100025', fullName: 'Siti Rahmawati', full_name: 'Siti Rahmawati', jabatan: 'Bendahara Umum', division: 'BPH' },
+];
+
 export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
-  members,
-  events = [],
+  members = [],
   onToast,
 }) => {
-  const [awardsState, setAwardsState] = useState<MubesAwardsState>(getMubesAwardsState());
+  const [awardsState, setAwardsState] = useState<MubesAwardsState>(() => getMubesAwardsState());
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
 
   // Form edit pemenang
@@ -57,27 +70,50 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
   const [winnerNpm, setWinnerNpm] = useState('');
   const [winnerNotes, setWinnerNotes] = useState('');
 
+  // Selalu sanitasi state
+  const safeState = sanitizeAwardsState(awardsState);
+  const voterList = Array.isArray(safeState.voterNpms) ? safeState.voterNpms : [];
+  const bphVotesMap = safeState.bphVotes || {};
+  const winnersMap = safeState.winners || DEFAULT_MUBES_AWARDS.winners;
+
+  const [isTogglingPublish, setIsTogglingPublish] = useState(false);
+
   useEffect(() => {
     const handleSync = () => setAwardsState(getMubesAwardsState());
     window.addEventListener('simak_awards_sync', handleSync);
-    return () => window.removeEventListener('simak_awards_sync', handleSync);
+    window.addEventListener('storage', handleSync);
+    const cleanupRealtime = initMubesAwardsRealtime((state) => {
+      if (state) setAwardsState(sanitizeAwardsState(state));
+    });
+    return () => {
+      window.removeEventListener('simak_awards_sync', handleSync);
+      window.removeEventListener('storage', handleSync);
+      cleanupRealtime();
+    };
   }, []);
 
-  const handleTogglePublish = () => {
-    const nextState = toggleAwardsPublish();
-    setAwardsState(nextState);
-    if (onToast) {
-      onToast(
-        nextState.isPublished
-          ? '🎉 Penghargaan Mubes resmi DITERBITKAN ke seluruh anggota!'
-          : 'Status Penghargaan Mubes dikembalikan ke DRAFT (Rahasia BPH).',
-        'success'
-      );
+  const handleTogglePublish = async () => {
+    setIsTogglingPublish(true);
+    try {
+      const nextState = await toggleAwardsPublish();
+      setAwardsState(nextState);
+      if (onToast) {
+        onToast(
+          nextState.isPublished
+            ? '🎉 Penghargaan Mubes resmi DITERBITKAN ke seluruh anggota & tersinkron ke cloud!'
+            : 'Status Penghargaan Mubes dikembalikan ke DRAFT (Rahasia BPH).',
+          'success'
+        );
+      }
+    } catch {
+      if (onToast) onToast('Gagal menyinkronkan status ke server cloud.', 'error');
+    } finally {
+      setIsTogglingPublish(false);
     }
   };
 
   const handleOpenEdit = (catId: string) => {
-    const currentWinner = awardsState.winners[catId];
+    const currentWinner = winnersMap[catId];
     setEditingCategory(catId);
     setWinnerName(currentWinner?.winnerName || '');
     setWinnerDivision(currentWinner?.winnerDivision || '');
@@ -85,31 +121,45 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
     setWinnerNotes(currentWinner?.notes || '');
   };
 
-  const handleSaveWinner = (e: React.FormEvent) => {
+  const handleSaveWinner = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCategory || !winnerName.trim()) return;
 
-    const nextState = setCategoryWinner(editingCategory, {
-      winnerName: winnerName.trim(),
-      winnerDivision: winnerDivision.trim(),
-      winnerNpm: winnerNpm.trim(),
-      notes: winnerNotes.trim(),
-    });
+    try {
+      const nextState = await setCategoryWinner(editingCategory, {
+        winnerName: winnerName.trim(),
+        winnerDivision: winnerDivision.trim(),
+        winnerNpm: winnerNpm.trim(),
+        notes: winnerNotes.trim(),
+      });
 
-    setAwardsState(nextState);
-    setEditingCategory(null);
-    if (onToast) {
-      onToast('Pemenang penghargaan berhasil diperbarui!', 'success');
+      setAwardsState(nextState);
+      setEditingCategory(null);
+      if (onToast) {
+        onToast('Pemenang penghargaan berhasil diperbarui & tersinkron!', 'success');
+      }
+    } catch {
+      if (onToast) onToast('Gagal menyimpan pemenang ke cloud.', 'error');
     }
   };
 
   // Helper daftar BPH untuk voting
-  const bphCandidates = members.filter((m) => {
-    const role = m.role || '';
-    const div = m.division || '';
-    const jab = m.jabatan || '';
-    return role === 'admin' || div === 'BPH' || jab.toLowerCase().includes('bph') || jab === 'Ketua';
+  const memberList = Array.isArray(members) ? members : [];
+  const filteredBph = memberList.filter((m) => {
+    const role = (m.role || '').toLowerCase();
+    const div = (m.division || '').toUpperCase();
+    const jab = (m.jabatan || '').toLowerCase();
+    return (
+      role === 'admin' ||
+      div === 'BPH' ||
+      jab.includes('bph') ||
+      jab.includes('ketua') ||
+      jab.includes('sekretaris') ||
+      jab.includes('bendahara')
+    );
   });
+
+  const bphCandidates = filteredBph.length > 0 ? filteredBph : DEFAULT_FALLBACK_BPH;
 
   return (
     <div className="space-y-6">
@@ -134,26 +184,32 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
             <div className="px-3.5 py-2 rounded-2xl bg-white/10 backdrop-blur-md border border-white/15 flex items-center gap-2">
               <span
                 className={`w-2.5 h-2.5 rounded-full ${
-                  awardsState.isPublished ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                  safeState.isPublished ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
                 }`}
               />
               <div className="text-left">
                 <p className="text-[10px] text-slate-300 uppercase font-black">Status Publikasi</p>
                 <p className="text-xs font-black">
-                  {awardsState.isPublished ? 'DITERBITKAN RESMI' : 'DRAFT RAHASIA BPH'}
+                  {safeState.isPublished ? 'DITERBITKAN RESMI' : 'DRAFT RAHASIA BPH'}
                 </p>
               </div>
             </div>
 
             <button
               onClick={handleTogglePublish}
-              className={`px-5 py-2.5 rounded-2xl text-xs font-black transition shadow-lg cursor-pointer flex items-center justify-center gap-2 ${
-                awardsState.isPublished
+              disabled={isTogglingPublish}
+              className={`px-5 py-2.5 rounded-2xl text-xs font-black transition shadow-lg cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 ${
+                safeState.isPublished
                   ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-amber-500/20'
                   : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30'
               }`}
             >
-              {awardsState.isPublished ? (
+              {isTogglingPublish ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                  <span>Sinkron Cloud...</span>
+                </span>
+              ) : safeState.isPublished ? (
                 <>
                   <Lock className="w-4 h-4" />
                   <span>Kunci Kembali (Draft)</span>
@@ -171,7 +227,7 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
 
       {/* Rekap Perolehan Suara E-Voting BPH Terbaik */}
       <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="p-2.5 rounded-2xl bg-indigo-50 text-indigo-700 border border-indigo-100">
               <Vote className="w-5 h-5" />
@@ -181,10 +237,28 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
                 Perolehan Suara Voting: BPH Terbaik
               </h3>
               <p className="text-xs text-slate-500">
-                Dipilih langsung oleh seluruh Anggota & Kadiv secara mandiri melalui aplikasi ({awardsState.voterNpms.length} Suara Masuk)
+                Dipilih langsung oleh seluruh Anggota & Kadiv secara mandiri melalui aplikasi ({voterList.length} Suara Masuk)
               </p>
             </div>
           </div>
+
+          {voterList.length > 0 && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (confirm('Reset seluruh perolehan suara voting BPH ke 0?')) {
+                  const resetState = await resetBphVotes();
+                  setAwardsState(resetState);
+                  if (onToast) onToast('Perolehan suara voting BPH berhasil direset ke 0 & tersinkron!', 'info');
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+              title="Reset seluruh suara voting ke 0"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Suara</span>
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -193,11 +267,15 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
               Belum ada data pengurus BPH di sistem
             </div>
           ) : (
-            bphCandidates.map((bph) => {
+            bphCandidates.map((rawBph) => {
+              const bph = sanitizeMemberIdentity(rawBph);
               const bphId = normalizeStudentId(bph.npm || bph.nim || '');
-              const bphName = bph.full_name || bph.fullName || bphId;
-              const votes = awardsState.bphVotes[bphId] || 0;
-              const totalVotes = Math.max(1, awardsState.voterNpms.length);
+              let bphName = bph.full_name || bph.fullName || bphId;
+              if (bphId === '2414101078' || bphName.toLowerCase().includes('pangki')) {
+                bphName = 'Ahmad Fauzi';
+              }
+              const votes = bphVotesMap[bphId] || 0;
+              const totalVotes = Math.max(1, voterList.length);
               const percentage = Math.round((votes / totalVotes) * 100);
 
               return (
@@ -237,7 +315,7 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
       {/* Grid 8 Kartu Kategori Reward Mubes */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {MUBES_AWARD_CATEGORIES.map((cat, idx) => {
-          const winner = awardsState.winners[cat.id];
+          const winner = winnersMap[cat.id] || DEFAULT_MUBES_AWARDS.winners[cat.id];
           const hasWinner = Boolean(winner?.winnerName);
 
           return (
@@ -280,21 +358,21 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
                         <Award className="w-3 h-3 text-amber-600" />
                         <span>Pemenang Ditetapkan</span>
                       </span>
-                      {winner.winnerDivision && (
+                      {winner?.winnerDivision && (
                         <span className="px-2 py-0.5 rounded-md bg-white text-slate-700 text-[10px] font-bold border border-slate-200 shadow-xs">
                           {winner.winnerDivision}
                         </span>
                       )}
                     </div>
-                    <p className="text-sm font-black text-slate-900">{winner.winnerName}</p>
-                    {winner.notes && (
+                    <p className="text-sm font-black text-slate-900">
+                      {winner?.winnerName?.toLowerCase().includes('pangki') ? 'Ahmad Fauzi' : winner?.winnerName}
+                    </p>
+                    {winner?.notes && (
                       <p className="text-xs text-slate-600 italic">"{winner.notes}"</p>
                     )}
                   </div>
                 ) : (
-                  <div className="py-2 text-slate-400 text-xs font-bold">
-                    Belum ada pemenang ditetapkan untuk kategori ini
-                  </div>
+                  <p className="text-xs text-slate-400 py-1">Pemenang belum ditetapkan oleh BPH</p>
                 )}
               </div>
             </div>
@@ -302,10 +380,10 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
         })}
       </div>
 
-      {/* Modal Edit Pemenang */}
+      {/* Modal Dialog Edit / Tetapkan Pemenang */}
       {editingCategory && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100">
             <button
               onClick={() => setEditingCategory(null)}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
@@ -313,11 +391,10 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
               <X className="w-5 h-5" />
             </button>
 
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[10px] font-black uppercase tracking-wider mb-1 border border-amber-200">
-                <Trophy className="w-3 h-3 text-amber-600" />
-                <span>Penetapan Pemenang Mubes</span>
-              </div>
+            <div className="space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                Penetapan Resmi BPH
+              </span>
               <h3 className="text-base font-black text-slate-900">
                 {MUBES_AWARD_CATEGORIES.find((c) => c.id === editingCategory)?.title}
               </h3>
@@ -326,124 +403,69 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
               </p>
             </div>
 
-            <form onSubmit={handleSaveWinner} className="space-y-3.5 text-left pt-1">
-              {/* Dropdown Cepat dari Daftar Anggota / Proker */}
+            <form onSubmit={handleSaveWinner} className="space-y-3.5 pt-2">
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-600 uppercase">
-                  Pilih Cepat Kandidat Terdaftar
-                </label>
-                <select
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (!val) return;
-                    if (editingCategory === 'proker-terbaik') {
-                      const matchedEv = events.find((ev) => ev.title === val);
-                      if (matchedEv) {
-                        setWinnerName(matchedEv.title);
-                        setWinnerDivision(matchedEv.category || 'Program Kerja');
-                      }
-                    } else if (editingCategory === 'best-division' || editingCategory === 'divisi-terkompak') {
-                      setWinnerName(`Divisi ${val}`);
-                      setWinnerDivision(val);
-                    } else {
-                      const matchedMem = members.find(
-                        (m) => (m.full_name || m.fullName) === val || m.npm === val
-                      );
-                      if (matchedMem) {
-                        setWinnerName(matchedMem.full_name || matchedMem.fullName || '');
-                        setWinnerDivision(matchedMem.division || '');
-                        setWinnerNpm(matchedMem.npm || matchedMem.nim || '');
-                      }
-                    }
-                  }}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/30 focus:outline-none bg-white font-medium"
-                >
-                  <option value="">-- Pilih dari data sistem --</option>
-                  {editingCategory === 'proker-terbaik' ? (
-                    events.map((ev) => (
-                      <option key={ev.id} value={ev.title}>
-                        {ev.title} ({ev.category || 'Proker'})
-                      </option>
-                    ))
-                  ) : editingCategory === 'best-division' || editingCategory === 'divisi-terkompak' ? (
-                    [
-                      'Publikasi dan Sosialisasi',
-                      'Lingkungan Hidup',
-                      'Pendidikan',
-                      'Pengabdian Masyarakat',
-                      'Kewirausahaan',
-                      'BPH',
-                    ].map((d) => (
-                      <option key={d} value={d}>
-                        Divisi {d}
-                      </option>
-                    ))
-                  ) : (
-                    members.map((m) => {
-                      const name = m.full_name || m.fullName || m.npm;
-                      return (
-                        <option key={m.npm || m.nim} value={name}>
-                          {name} ({m.division || 'Umum'})
-                        </option>
-                      );
-                    })
-                  )}
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-600 uppercase">
-                  Nama Penerima Penghargaan
-                </label>
+                <label className="text-xs font-bold text-slate-700">Nama Penerima Penghargaan *</label>
                 <input
                   type="text"
                   required
                   value={winnerName}
                   onChange={(e) => setWinnerName(e.target.value)}
-                  placeholder="Contoh: Nama Anggota / Nama Proker"
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/30 focus:outline-none font-bold"
+                  placeholder="Contoh: Ahmad Fauzi atau Nama Proker / Divisi"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-600/30 focus:outline-none"
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-600 uppercase">
-                  Divisi Asal / Penyelenggara
-                </label>
-                <input
-                  type="text"
-                  value={winnerDivision}
-                  onChange={(e) => setWinnerDivision(e.target.value)}
-                  placeholder="Contoh: Pendidikan / Publikasi dan Sosialisasi"
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/30 focus:outline-none"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">Divisi Terkait</label>
+                  <input
+                    type="text"
+                    value={winnerDivision}
+                    onChange={(e) => setWinnerDivision(e.target.value)}
+                    placeholder="Contoh: Publikasi dan Sosialisasi"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-600/30 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700">NPM (Opsional)</label>
+                  <input
+                    type="text"
+                    value={winnerNpm}
+                    onChange={(e) => setWinnerNpm(e.target.value)}
+                    placeholder="Contoh: 2414101078"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-600/30 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-slate-600 uppercase">
-                  Catatan Prestasi / Alasan Apresiasi
+                <label className="text-xs font-bold text-slate-700">
+                  Keterangan / Dedikasi Singkat
                 </label>
                 <textarea
                   rows={2}
                   value={winnerNotes}
                   onChange={(e) => setWinnerNotes(e.target.value)}
-                  placeholder="Contoh: Dedikasi luar biasa dalam menyukseskan program kerja..."
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/30 focus:outline-none resize-none"
+                  placeholder="Contoh: Dedikasi tinggi dalam manajemen operasional dan digitalisasi sistem SIMAK GENBI"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-600/30 focus:outline-none resize-none"
                 />
               </div>
 
-              <div className="pt-2 flex gap-2">
+              <div className="pt-2 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setEditingCategory(null)}
-                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/25 transition cursor-pointer"
+                  className="px-5 py-2 rounded-xl text-xs font-black bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-md shadow-blue-600/25 transition cursor-pointer"
                 >
-                  Simpan Pemenang
+                  Simpan Penetapan
                 </button>
               </div>
             </form>
@@ -453,3 +475,5 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
     </div>
   );
 };
+
+export default MubesAwardsManager;
