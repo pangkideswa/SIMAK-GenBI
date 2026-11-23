@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Trophy,
-  Vote,
   CheckCircle2,
   Lock,
   RefreshCw,
@@ -124,10 +123,6 @@ export const MubesAwardsMemberView: React.FC<MubesAwardsMemberViewProps> = ({
           <div className="relative z-10 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="space-y-1">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-400/20 text-cyan-300 border border-cyan-400/30 text-[10px] font-black uppercase tracking-wider">
-                  <Vote className="w-3.5 h-3.5 text-cyan-300" />
-                  <span>Bilik Suara Digital Mubes</span>
-                </div>
                 <h3 className="text-lg sm:text-xl font-black text-white">
                   Voting Rahasia: BPH Terbaik Pilihanmu
                 </h3>

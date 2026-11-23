@@ -30,6 +30,9 @@ import {
   Settings,
   X,
   UserPlus,
+  Award,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Division, Role } from '../types/database';
@@ -44,6 +47,17 @@ import {
   deleteMasterDivision,
   resolveUserJabatan,
 } from '../lib/roleMaster';
+import {
+  getPointSettings,
+  savePointSettings,
+  updateMemberPointsDirectly,
+  PointSettings,
+} from '../lib/pointSettings';
+import {
+  getLeaderboardPublishState,
+  setLeaderboardPublishState,
+  LeaderboardPublishState,
+} from '../lib/leaderboardPublish';
 import {
   AcademicPeriod,
   getAcademicPeriods,
@@ -84,7 +98,7 @@ const DEFAULT_MEMBERS_ROSTER: MemberUser[] = [
   { npm: '2214100010', nim: '2214100010', fullName: 'Deden Kurniawan', division: 'Publikasi dan Sosialisasi', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'deden@genbi-unma.ac.id', source: 'whitelist' },
   { npm: '2214100025', nim: '2214100025', fullName: 'Siti Rahmawati', division: 'Pendidikan', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'siti@genbi-unma.ac.id', source: 'whitelist' },
   { npm: '2214100033', nim: '2214100033', fullName: 'Fajar Pratama', division: 'Lingkungan Hidup', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'fajar@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100048', nim: '2214100048', fullName: 'Anisa Permata', division: 'Publikasi dan Sosialisasi', role: 'member', jabatan: 'Anggota', isClaimed: true, email: 'anisa@genbi-unma.ac.id', source: 'whitelist' },
+  { npm: '2214100048', nim: '2214100048', fullName: 'Muhamad Fahmi', division: 'Publikasi dan Sosialisasi', role: 'member', jabatan: 'Anggota', isClaimed: true, email: 'fahmi@genbi-unma.ac.id', source: 'whitelist' },
   { npm: '2214100052', nim: '2214100052', fullName: 'Rizky Ramadhan', division: 'Kewirausahaan', role: 'member', jabatan: 'Anggota', isClaimed: false, email: 'rizky@genbi-unma.ac.id', source: 'whitelist' },
   { npm: '2214100067', nim: '2214100067', fullName: 'Nadia Putri', division: 'Pengabdian Masyarakat', role: 'member', jabatan: 'Anggota', isClaimed: false, email: 'nadia@genbi-unma.ac.id', source: 'whitelist' },
 ];
@@ -142,6 +156,44 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
 
   // Floating Toast Notification State
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' | 'warning' } | null>(null);
+
+  // State Manajemen Bobot & Penyesuaian Poin Presensi (Super Admin)
+  const [pointSettings, setPointSettings] = useState<PointSettings>(() => getPointSettings());
+  const [showAdjustPointsModal, setShowAdjustPointsModal] = useState(false);
+  const [adjustTargetMember, setAdjustTargetMember] = useState<MemberUser | null>(null);
+  const [adjustTargetPoints, setAdjustTargetPoints] = useState<number>(60);
+  const [adjustReason, setAdjustReason] = useState<string>('Penyesuaian poin oleh Super Admin');
+  const [isSavingAdjustPoints, setIsSavingAdjustPoints] = useState(false);
+
+  // Form Setelan Bobot Poin Presensi
+  const [delegasiPointsInput, setDelegasiPointsInput] = useState<number>(pointSettings.delegasiPoints);
+  const [defaultEventPointsInput, setDefaultEventPointsInput] = useState<number>(pointSettings.defaultEventPoints);
+  const [isSavingPointSettings, setIsSavingPointSettings] = useState(false);
+
+  // State Publikasi Leaderboard Anggota (Super Admin Root)
+  const [leaderboardPublish, setLeaderboardPublish] = useState<LeaderboardPublishState>(() =>
+    getLeaderboardPublishState()
+  );
+  const [isTogglingPublish, setIsTogglingPublish] = useState(false);
+
+  const handleToggleLeaderboardPublish = async () => {
+    setIsTogglingPublish(true);
+    try {
+      const next = !leaderboardPublish.isPublished;
+      const updated = await setLeaderboardPublishState(next, 'Super Admin Root');
+      setLeaderboardPublish(updated);
+      showToast(
+        next
+          ? 'Sukses! Leaderboard resmi DITERBITKAN ke seluruh akun anggota.'
+          : 'Leaderboard kini DIRAHSIAKAN (Draft) dari akun anggota.',
+        next ? 'success' : 'info'
+      );
+    } catch {
+      showToast('Gagal mengubah status publikasi leaderboard.', 'error');
+    } finally {
+      setIsTogglingPublish(false);
+    }
+  };
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' | 'warning' = 'success') => {
     setToast({ message, type });
@@ -264,12 +316,19 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
       else setMasterDivisions(getMasterDivisions());
     };
 
+    const handlePublishUpdated = (e: any) => {
+      if (e?.detail) setLeaderboardPublish(e.detail);
+      else setLeaderboardPublish(getLeaderboardPublishState());
+    };
+
+    window.addEventListener('simak_leaderboard_publish_updated', handlePublishUpdated);
     window.addEventListener('simak_member_sync', handleSync);
     window.addEventListener('simak_period_sync', handlePeriodSync);
     window.addEventListener('simak_audit_sync', handleAuditSync);
     window.addEventListener('simak_jabatan_sync', handleJabatanSync);
     window.addEventListener('simak_division_sync', handleDivisionSync);
     return () => {
+      window.removeEventListener('simak_leaderboard_publish_updated', handlePublishUpdated);
       window.removeEventListener('simak_member_sync', handleSync);
       window.removeEventListener('simak_period_sync', handlePeriodSync);
       window.removeEventListener('simak_audit_sync', handleAuditSync);
@@ -443,7 +502,50 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
     }
   };
 
-  // Tambah Penerima Beasiswa / Anggota Baru
+  // Simpan Setelan Bobot Poin Presensi (Delegasi BI & Kegiatan Reguler)
+  const handleSaveGlobalPointSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingPointSettings(true);
+    try {
+      const updated = savePointSettings({
+        delegasiPoints: Number(delegasiPointsInput),
+        defaultEventPoints: Number(defaultEventPointsInput),
+      }, 'Super Admin Root');
+      setPointSettings(updated);
+      showToast(`Sukses! Bobot poin diperbarui: Delegasi BI (+${updated.delegasiPoints} Poin), Kegiatan (+${updated.defaultEventPoints} Poin).`, 'success');
+    } catch (err: any) {
+      showToast(err.message || 'Gagal menyimpan setelan poin.', 'error');
+    } finally {
+      setIsSavingPointSettings(false);
+    }
+  };
+
+  // Simpan Penyesuaian Total Poin Anggota Secara Langsung
+  const handleSaveMemberPointAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustTargetMember) return;
+    setIsSavingAdjustPoints(true);
+    try {
+      const res = await updateMemberPointsDirectly(
+        adjustTargetMember.npm,
+        adjustTargetPoints,
+        adjustReason,
+        'Super Admin Root'
+      );
+      if (res.success) {
+        showToast(res.message, 'success');
+        setShowAdjustPointsModal(false);
+        setAdjustTargetMember(null);
+        loadAllUsers();
+      } else {
+        showToast(res.message, 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Gagal memperbarui poin.', 'error');
+    } finally {
+      setIsSavingAdjustPoints(false);
+    }
+  };
   const handleCreateNewMember = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanId = normalizeStudentId(newMemberNpm);
@@ -957,10 +1059,6 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             {/* Header Card & Penjelasan */}
             <div className="p-4 sm:p-6 rounded-3xl bg-gradient-to-r from-blue-950/70 via-slate-900 to-slate-900 border border-blue-500/30 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[11px] font-bold uppercase mb-2">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Pusat Kontrol Akses & Struktur Organisasi</span>
-                </div>
                 <h2 className="text-base sm:text-xl font-black text-white">
                   Kontrol Hak Akses Seluruh Anggota & Pengurus
                 </h2>
@@ -1085,13 +1183,39 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                           )}
                         </td>
                         <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => handleOpenEdit(m)}
-                            className="px-3 py-1.5 rounded-xl bg-blue-950/60 hover:bg-blue-900 text-blue-200 text-xs font-bold transition flex items-center gap-1 mx-auto border border-blue-700/50 cursor-pointer shadow-xs active:scale-95"
-                          >
-                            <Pencil className="w-3 h-3 text-blue-300" />
-                            <span>Ubah</span>
-                          </button>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => handleOpenEdit(m)}
+                              className="px-2.5 py-1.5 rounded-xl bg-blue-950/60 hover:bg-blue-900 text-blue-200 text-xs font-bold transition flex items-center gap-1 border border-blue-700/50 cursor-pointer shadow-xs active:scale-95"
+                              title="Ubah Jabatan & Akses"
+                            >
+                              <Pencil className="w-3 h-3 text-blue-300" />
+                              <span>Ubah</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setAdjustTargetMember(m);
+                                // Coba ambil nilai poin saat ini dari cache
+                                let curPts = 60;
+                                try {
+                                  const rawOv = localStorage.getItem('simak_evaluations_overrides');
+                                  if (rawOv) {
+                                    const map = JSON.parse(rawOv);
+                                    const clean = normalizeStudentId(m.npm);
+                                    if (map[clean]?.total_points !== undefined) curPts = map[clean].total_points;
+                                  }
+                                } catch {}
+                                setAdjustTargetPoints(curPts);
+                                setAdjustReason('Penyesuaian poin oleh Super Admin');
+                                setShowAdjustPointsModal(true);
+                              }}
+                              className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-xs font-bold transition flex items-center gap-1 border border-amber-500/40 cursor-pointer shadow-xs active:scale-95"
+                              title="Edit / Sesuaikan Poin Keaktifan"
+                            >
+                              <Award className="w-3 h-3 text-amber-400" />
+                              <span>Poin</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                       );
@@ -1144,13 +1268,36 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                       {renderJabatanBadge(m)}
                     </div>
 
-                    <button
-                      onClick={() => handleOpenEdit(m)}
-                      className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition flex items-center gap-1 shadow-md shadow-blue-600/30 cursor-pointer active:scale-95"
-                    >
-                      <Pencil className="w-3 h-3" />
-                      <span>Ubah</span>
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleOpenEdit(m)}
+                        className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition flex items-center gap-1 shadow-md shadow-blue-600/30 cursor-pointer active:scale-95"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>Ubah</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setAdjustTargetMember(m);
+                          let curPts = 60;
+                          try {
+                            const rawOv = localStorage.getItem('simak_evaluations_overrides');
+                            if (rawOv) {
+                              const map = JSON.parse(rawOv);
+                              const clean = normalizeStudentId(m.npm);
+                              if (map[clean]?.total_points !== undefined) curPts = map[clean].total_points;
+                            }
+                          } catch {}
+                          setAdjustTargetPoints(curPts);
+                          setAdjustReason('Penyesuaian poin oleh Super Admin');
+                          setShowAdjustPointsModal(true);
+                        }}
+                        className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition flex items-center gap-1 shadow-md cursor-pointer active:scale-95"
+                      >
+                        <Award className="w-3 h-3 text-amber-400" />
+                        <span>Poin</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
                 );
@@ -1165,10 +1312,6 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             {/* Header Banner */}
             <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-blue-950/70 via-slate-900 to-slate-900 border border-blue-500/30 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-300 text-[11px] font-bold uppercase mb-2">
-                  <CalendarDays className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Siklus Periode & Multi-Tahun</span>
-                </div>
                 <h2 className="text-lg sm:text-xl font-black text-white">
                   Manajemen Periode Kepengurusan GenBI
                 </h2>
@@ -1358,6 +1501,125 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         {/* TAB 4: KESEHATAN SISTEM & DATABASE */}
         {activeTab === 'system' && (
           <div className="space-y-6 animate-in fade-in duration-200">
+            {/* PANEL KONFIGURASI BOBOT POIN PRESENSI GLOBAL (SUPER ADMIN) */}
+            <div className="p-6 rounded-3xl bg-slate-900 border border-amber-500/30 space-y-4 shadow-xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white">
+                    Pengaturan Bobot Poin Presensi Kegiatan & Delegasi BI
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                    Ubah bobot reward poin presensi secara terpusat. Nilai yang disetel di sini langsung berlaku pada tombol delegasi anggota di mobile, agenda baru, serta persetujuan BPH.
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveGlobalPointSettings} className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                  <label className="text-xs font-black text-amber-400 uppercase flex items-center justify-between">
+                    <span>Poin Presensi Tugas Delegasi BI</span>
+                    <span className="text-[10px] text-slate-500">Maks. 100</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      required
+                      value={delegasiPointsInput}
+                      onChange={(e) => setDelegasiPointsInput(Number(e.target.value))}
+                      className="w-full px-3.5 py-2 text-sm bg-slate-900 border border-slate-700 rounded-xl text-white font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                    />
+                    <span className="text-xs font-bold text-slate-400">Poin</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Nilai reward saat anggota mewakili GenBI UNMA di agenda Bank Indonesia.
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+                  <label className="text-xs font-black text-blue-400 uppercase flex items-center justify-between">
+                    <span>Default Poin Presensi Agenda Biasa / Proker</span>
+                    <span className="text-[10px] text-slate-500">Maks. 100</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      required
+                      value={defaultEventPointsInput}
+                      onChange={(e) => setDefaultEventPointsInput(Number(e.target.value))}
+                      className="w-full px-3.5 py-2 text-sm bg-slate-900 border border-slate-700 rounded-xl text-white font-mono font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    />
+                    <span className="text-xs font-bold text-slate-400">Poin</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Nilai default saat panitia BPH membuat agenda kegiatan / seminar baru.
+                  </p>
+                </div>
+
+                <div className="sm:col-span-2 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isSavingPointSettings}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black text-xs shadow-lg shadow-amber-500/20 transition cursor-pointer active:scale-95 disabled:opacity-60 flex items-center gap-2"
+                  >
+                    <Award className="w-4 h-4 text-slate-950" />
+                    <span>{isSavingPointSettings ? 'Menyimpan...' : 'Simpan Perubahan Bobot Poin'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* KONTROL PUBLIKASI LEADERBOARD ANGGOTA */}
+            <div className="p-6 rounded-3xl bg-slate-900 border border-blue-500/30 space-y-4 shadow-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-black text-white">
+                      Status Publikasi Leaderboard Anggota
+                    </h3>
+                    {leaderboardPublish.isPublished ? (
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-black">
+                        ✓ Terbit ke Anggota
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 text-[10px] font-black">
+                        🔒 Dirahasiakan (Draft Internal)
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
+                    Sembunyikan atau buka klasemen poin untuk akun anggota. Saat dirahasiakan, anggota hanya melihat evaluasi mandirinya agar tidak berorientasi hanya pada absensi semata. Kepala Divisi tetap dapat memantau anggotanya khusus per divisinya.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleToggleLeaderboardPublish}
+                  disabled={isTogglingPublish}
+                  className={`px-5 py-2.5 rounded-xl font-black text-xs transition cursor-pointer shadow-lg active:scale-95 flex items-center gap-2 self-start sm:self-center shrink-0 disabled:opacity-60 ${
+                    leaderboardPublish.isPublished
+                      ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/20'
+                      : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/20'
+                  }`}
+                >
+                  {leaderboardPublish.isPublished ? (
+                    <>
+                      <EyeOff className="w-4 h-4" />
+                      <span>{isTogglingPublish ? 'Memproses...' : 'Tutup / Rahasiakan Dari Anggota'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="w-4 h-4" />
+                      <span>{isTogglingPublish ? 'Memproses...' : 'Terbitkan Leaderboard ke Anggota'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="p-5 rounded-3xl bg-slate-900/90 border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between">
@@ -1450,10 +1712,6 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             {/* Header Banner */}
             <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-blue-950/70 via-slate-900 to-slate-900 border border-blue-500/30 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300 text-[11px] font-bold uppercase mb-2">
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Sistem Kepatuhan & Audit Trail</span>
-                </div>
                 <h2 className="text-lg sm:text-xl font-black text-white">
                   Log Riwayat Aktivitas & Keamanan SIMAK GENBI
                 </h2>
@@ -1647,10 +1905,6 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
           <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-blue-500/30 p-6 shadow-2xl space-y-4 relative">
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-blue-400/30">
-                <CalendarDays className="w-3 h-3 text-blue-400" />
-                <span>{editingPeriod ? 'Edit Periode' : 'Tambah Periode Baru'}</span>
-              </div>
               <h3 className="text-base font-black text-white">
                 {editingPeriod ? 'Ubah Rincian Periode Kepengurusan' : 'Buat Periode Kepengurusan Baru'}
               </h3>
@@ -1766,10 +2020,6 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             </button>
 
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-blue-400/30">
-                <Pencil className="w-3 h-3 text-blue-400" />
-                <span>Super Admin Hak Akses & Jabatan</span>
-              </div>
               <h3 className="text-base font-black text-white">
                 Perbarui Data & Jabatan Pengguna
               </h3>
@@ -1904,10 +2154,6 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             </button>
 
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-indigo-400/30">
-                <Settings className="w-3 h-3 text-indigo-400" />
-                <span>Pusat Struktur Organisasi</span>
-              </div>
               <h3 className="text-base font-black text-white">
                 Master Jabatan & Divisi GenBI
               </h3>
@@ -2100,10 +2346,6 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             </button>
 
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase tracking-wider mb-1 border border-emerald-400/30">
-                <UserPlus className="w-3 h-3 text-emerald-400" />
-                <span>Penerima Beasiswa Baru</span>
-              </div>
               <h3 className="text-base font-black text-white">
                 Daftarkan Anggota Baru ke Sistem
               </h3>
@@ -2191,6 +2433,91 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                   className="flex-1 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/30 transition cursor-pointer disabled:opacity-50"
                 >
                   {isSavingNewMember ? 'Mendaftarkan...' : 'Daftarkan Anggota'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PENYESUAIAN POIN ANGGOTA OLEH SUPER ADMIN */}
+      {showAdjustPointsModal && adjustTargetMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-sm rounded-[32px] bg-slate-900 border border-amber-500/30 p-6 shadow-2xl space-y-4 relative">
+            <button
+              onClick={() => {
+                setShowAdjustPointsModal(false);
+                setAdjustTargetMember(null);
+              }}
+              className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <h3 className="text-base font-black text-white">
+                Edit / Sesuaikan Poin Anggota
+              </h3>
+              <p className="text-xs text-slate-400 truncate">
+                {adjustTargetMember.fullName} ({adjustTargetMember.npm})
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveMemberPointAdjustment} className="space-y-3.5 text-left">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-400 uppercase flex items-center justify-between">
+                  <span>Total Poin Keaktifan Baru *</span>
+                  <span className="text-[10px] text-amber-400 font-semibold">Skala 0 - 100 Poin</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    required
+                    value={adjustTargetPoints}
+                    onChange={(e) => setAdjustTargetPoints(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 text-base bg-slate-950 border border-slate-800 rounded-xl text-white font-mono font-bold focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                  />
+                  <span className="text-xs font-bold text-slate-400">Poin</span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-400 uppercase">
+                  Alasan / Keterangan Penyesuaian *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={adjustReason}
+                  onChange={(e) => setAdjustReason(e.target.value)}
+                  placeholder="Contoh: Koreksi nilai tugas delegasi / dispensasi khusus"
+                  className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                />
+              </div>
+
+              <div className="p-3 rounded-2xl bg-amber-950/30 border border-amber-800/40 text-[11px] text-amber-200">
+                💡 Poin yang Anda tetapkan akan langsung disinkronkan ke kartu profil anggota, Leaderboard, dan rekap evaluasi secara instan.
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAdjustPointsModal(false);
+                    setAdjustTargetMember(null);
+                  }}
+                  className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingAdjustPoints}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 hover:from-amber-500 hover:to-yellow-600 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-amber-500/20 transition cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingAdjustPoints ? 'Menyimpan...' : 'Simpan Poin'}
                 </button>
               </div>
             </form>

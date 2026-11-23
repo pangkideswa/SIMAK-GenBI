@@ -25,7 +25,6 @@ import {
   Wifi,
   Info,
   ShieldCheck,
-  Zap,
   User,
   Settings,
   Phone,
@@ -44,13 +43,14 @@ import {
   Bell,
   RotateCw,
   Trash2,
+  Lock,
 } from 'lucide-react';
 import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react';
 import { Html5Qrcode } from 'html5-qrcode';
 import html2canvas from 'html2canvas-pro';
 import { supabase } from '../lib/supabase';
 import { uploadProofToGDrive } from '../lib/gdrive';
-import { normalizeStudentId } from '../lib/memberSync';
+import { normalizeStudentId, syncMemberUpdate } from '../lib/memberSync';
 import { formatDateTimeWIB } from '../lib/dateUtils';
 import { changeUserPin } from '../lib/authSecurity';
 import { Footer } from '../components/Footer';
@@ -75,12 +75,14 @@ import {
 import { MemberReportModal } from '../components/MemberReportModal';
 import { MubesAwardsMemberView } from '../components/MubesAwardsMemberView';
 import { getMubesAwardsState, initMubesAwardsRealtime, fetchMubesAwardsCloud } from '../lib/awardsSync';
+import { getLeaderboardPublishState, LeaderboardPublishState } from '../lib/leaderboardPublish';
 import {
   enqueueOfflineAttendance,
   initOfflineQueueSync,
   getOfflineQueue,
   flushOfflineQueue,
 } from '../lib/offlineQueue';
+import { getPointSettings } from '../lib/pointSettings';
 import type { Event as EventType, MemberEvaluation, EvaluationPredicate, Role } from '../types/database';
 
 interface DashboardPageProps {
@@ -210,8 +212,8 @@ const DEFAULT_SAMPLE_LEADERBOARD: MemberEvaluation[] = [
     user_id: 'c3333333-3333-3333-3333-333333333333',
     npm: '2214100048',
     nim: '2214100048',
-    email: 'anisa@genbi-unma.ac.id',
-    full_name: 'Anisa Permata',
+    email: 'fahmi@genbi-unma.ac.id',
+    full_name: 'Muhamad Fahmi',
     division: 'Publikasi dan Sosialisasi',
     role: 'member',
     avatar_url: null,
@@ -410,10 +412,38 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   });
 
   // Active Tab & Filter Leaderboard
-  const [activeTab, setActiveTab] = useState<'events' | 'history' | 'leaderboard' | 'kadiv-workspace' | 'mubes-awards' | 'tiers'>('events');
+  const [activeTab, setActiveTab] = useState<'events' | 'history' | 'leaderboard' | 'mubes-awards' | 'tiers'>('events');
   const [selectedLeaderboardDivision, setSelectedLeaderboardDivision] = useState<string>('Semua');
   const [leaderboardSortOrder, setLeaderboardSortOrder] = useState<'highest' | 'lowest'>('highest');
   const [awardsState, setAwardsState] = useState(() => getMubesAwardsState());
+  const [pointSettings, setPointSettings] = useState(() => getPointSettings());
+  const [leaderboardPublish, setLeaderboardPublish] = useState<LeaderboardPublishState>(() =>
+    getLeaderboardPublishState()
+  );
+
+  useEffect(() => {
+    const handleSyncLeaderboardPublish = (e?: any) => {
+      setLeaderboardPublish(e?.detail || getLeaderboardPublishState());
+    };
+    window.addEventListener('simak_leaderboard_publish_updated', handleSyncLeaderboardPublish);
+    window.addEventListener('storage', handleSyncLeaderboardPublish);
+    return () => {
+      window.removeEventListener('simak_leaderboard_publish_updated', handleSyncLeaderboardPublish);
+      window.removeEventListener('storage', handleSyncLeaderboardPublish);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleSyncPointSettings = (e?: any) => {
+      setPointSettings(e?.detail || getPointSettings());
+    };
+    window.addEventListener('simak_point_settings_updated', handleSyncPointSettings);
+    window.addEventListener('storage', handleSyncPointSettings);
+    return () => {
+      window.removeEventListener('simak_point_settings_updated', handleSyncPointSettings);
+      window.removeEventListener('storage', handleSyncPointSettings);
+    };
+  }, []);
 
   useEffect(() => {
     const handleSyncAwards = () => setAwardsState(getMubesAwardsState());
@@ -1015,6 +1045,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         bio: editBio.trim() || null,
       }));
 
+      // Siarkan pembaruan profil ke Realtime WebSocket Mesh & database Supabase
+      try {
+        await syncMemberUpdate({
+          npm: cleanNpm || user.npm || user.nim || '',
+          nim: user.nim || cleanNpm,
+          fullName: editFullName.trim(),
+          division: profile.division,
+          role: (profile.role as any) || 'member',
+        });
+      } catch (syncErr) {
+        console.warn('Gagal sync member update:', syncErr);
+      }
+
       showToast('Profil Anda berhasil diperbarui dan tersimpan permanen!', 'success');
       setShowProfileModal(false);
       fetchProfile();
@@ -1377,13 +1420,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       const cleanTargetId = normalizeStudentId(detail.npm);
       const myCleanId = normalizeStudentId(user.npm || user.nim);
 
-      if (cleanTargetId === myCleanId) {
-        setProfile((prev) => ({
-          ...prev,
-          fullName: detail.full_name || prev.fullName,
-          division: detail.division || prev.division,
-          role: detail.role || prev.role,
-        }));
+      let localOverrides: Record<string, any> = {};
+      try {
+        const rawOv = localStorage.getItem('simak_whitelist_overrides');
+        if (rawOv) localOverrides = JSON.parse(rawOv);
+      } catch {}
+
+      if (detail.npm === 'ALL_SYNC' || cleanTargetId === myCleanId) {
+        const ov = localOverrides[myCleanId];
+        const updatedName = detail.full_name || detail.fullName || ov?.full_name;
+        if (updatedName) {
+          setProfile((prev) => ({
+            ...prev,
+            fullName: updatedName,
+            division: detail.division || ov?.division || prev.division,
+            role: detail.role || ov?.role || prev.role,
+          }));
+          user.fullName = updatedName;
+        } else {
+          fetchProfile();
+        }
       }
 
       setLeaderboard((prev) =>
@@ -1391,8 +1447,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           if (normalizeStudentId(item.npm || item.nim) === cleanTargetId) {
             return {
               ...item,
-              full_name: detail.full_name || item.full_name,
-              division: detail.division || item.division,
+              full_name: detail.full_name || detail.fullName || item.full_name,
+              division: detail.division || detail.division || item.division,
               role: detail.role || item.role,
             };
           }
@@ -2314,6 +2370,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         console.warn('Database note:', dbErr?.message);
       }
 
+      const delegasiPointsValue = getPointSettings().delegasiPoints;
+
       // Simpan ke state dan cache lokal
       const newDelegasiItem: AttendanceRecord = {
         id: 'delegasi-' + Date.now(),
@@ -2323,7 +2381,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         verified: false,
         scanned_at: new Date().toISOString(),
         event_title: `[DELEGASI BI] ${delegasiTitle} (${delegasiCity})`,
-        event_points: 30,
+        event_points: delegasiPointsValue,
         event_date: new Date().toISOString(),
         event_category: 'Wajib',
       };
@@ -2884,7 +2942,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   </div>
                 </button>
 
-                {/* Tombol Presensi Delegasi Bank Indonesia (+30 Poin) */}
+                {/* Tombol Presensi Delegasi Bank Indonesia */}
                 <button
                   onClick={() => {
                     setShowDelegasiModal(true);
@@ -2899,7 +2957,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     <div className="flex items-center justify-between gap-1">
                       <span className="block text-xs font-black text-slate-900 truncate">Tugas Delegasi</span>
                       <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-400 text-slate-950 text-[9px] font-black shadow-xs shrink-0 tracking-tight">
-                        +30 P
+                        +{pointSettings.delegasiPoints} P
                       </span>
                     </div>
                     <span className="block text-[10px] text-amber-800 font-bold truncate">Perwakilan BI</span>
@@ -2923,25 +2981,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     <span className="block text-xs font-black text-slate-900">Ajukan Izin</span>
                     <span className="block text-[10px] text-slate-500 font-medium">Dispensasi resmi</span>
                   </div>
-                </button>
-              </div>
-
-              {/* PWA Install Promotion Pill */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 rounded-lg bg-blue-600 text-white">
-                    <Zap className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <span className="font-bold text-slate-800 block leading-tight">Install PWA SIMAK</span>
-                    <span className="text-[10px] text-slate-500">Bisa dibuka offline di homescreen</span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => showToast('Gunakan menu browser -> "Add to Home Screen / Install Aplikasi"', 'info')}
-                  className="px-2.5 py-1 bg-white border border-blue-200 text-blue-700 rounded-lg font-bold text-[11px] hover:bg-blue-100 transition cursor-pointer"
-                >
-                  Panduan
                 </button>
               </div>
             </div>
@@ -3119,22 +3158,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   >
                     <Trophy className="w-3.5 h-3.5 text-amber-300" />
                     <span>Leaderboard</span>
+                    {profile.role === 'member' && !leaderboardPublish.isPublished && (
+                      <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                    )}
                   </button>
-
-                  {/* Tab Khusus Kepala Divisi (Kadiv Workspace) */}
-                  {profile.role === 'kadiv' && (
-                    <button
-                      onClick={() => setActiveTab('kadiv-workspace')}
-                      className={`flex-1 min-w-[130px] py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                        activeTab === 'kadiv-workspace'
-                          ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-500/20'
-                          : 'text-amber-800 bg-amber-50 hover:bg-amber-100'
-                      }`}
-                    >
-                      <Briefcase className="w-3.5 h-3.5 text-amber-300" />
-                      <span>Divisi Saya</span>
-                    </button>
-                  )}
 
                   <button
                     onClick={() => {
@@ -3378,403 +3405,425 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 )}
 
                 {/* TAB 3: LEADERBOARD POIN KEAKTIFAN */}
-                {activeTab === 'leaderboard' && (
-                  <div className="space-y-4">
-                    <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-blue-500/10 to-indigo-500/10 border border-amber-200/80 flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 bg-amber-400 text-slate-950 rounded-xl shadow-xs">
-                          <Trophy className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h4 className="text-xs sm:text-sm font-black text-slate-900">
-                            Peringkat Keaktifan GenBI UNMA
-                          </h4>
-                          <p className="text-[11px] text-slate-500">
-                            Evaluasi real-time penilaian keaktifan untuk monitoring BPH
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        onClick={fetchLeaderboard}
-                        disabled={isLoadingLeaderboard}
-                        className="p-2 bg-white rounded-xl border border-slate-200 text-slate-600 hover:text-blue-600 transition shadow-xs cursor-pointer"
-                        title="Segarkan data peringkat"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${isLoadingLeaderboard ? 'animate-spin' : ''}`} />
-                      </button>
-                    </div>
+                {activeTab === 'leaderboard' && (() => {
+                  const isKadiv = profile.role === 'kadiv' || user.role === 'kadiv';
+                  const isBphOrSuper = profile.role === 'admin' || user.role === 'admin' || profile.role === 'superadmin' || user.role === 'superadmin';
+                  const isMember = !isKadiv && !isBphOrSuper;
+                  const kadivDivision = profile.division || user.division || 'Publikasi dan Sosialisasi';
+                  const isLeaderboardLocked = isMember && !leaderboardPublish.isPublished;
 
-                    {/* Podium Spotlight: Top 3 GenBI of the Month */}
-                    {leaderboard.filter((m) => !isSuperAdminAccount(m)).length >= 3 && (() => {
-                      const topThree = leaderboard
-                        .filter((m) => !isSuperAdminAccount(m))
-                        .map((m) => sanitizeMemberIdentity(m))
-                        .slice()
-                        .sort((a, b) => b.total_points - a.total_points)
-                        .slice(0, 3);
-                      return (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          {/* Juara 2 (Perak) */}
-                          <div className="order-2 sm:order-1 p-3.5 rounded-2xl bg-white/95 border border-slate-200 shadow-xs flex flex-col justify-between relative overflow-hidden">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-black border border-slate-200">
-                                #2 Runner Up
-                              </span>
-                              <span className="font-black text-xs text-blue-600">
-                                +{topThree[1]?.total_points} P
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2.5">
-                              {topThree[1]?.avatar_url ? (
-                                <img
-                                  src={topThree[1].avatar_url}
-                                  alt={topThree[1].full_name}
-                                  className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 shadow-xs"
-                                  crossOrigin="anonymous"
-                                />
-                              ) : (
-                                <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
-                                  {topThree[1]?.full_name?.charAt(0)}
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <h5 className="font-extrabold text-xs text-slate-900 line-clamp-1">
-                                  {topThree[1]?.full_name}
-                                </h5>
-                                <p className="text-[10px] text-slate-400 line-clamp-1">
-                                  {topThree[1]?.division}
-                                </p>
-                              </div>
-                            </div>
+                  // 1. TAMPILAN TERKUNCI UNTUK ANGGOTA BIASA (JIKA BELUM DITERBITKAN)
+                  if (isLeaderboardLocked) {
+                    return (
+                      <div className="space-y-4 animate-in fade-in duration-200">
+                        <div className="p-8 sm:p-12 rounded-[32px] bg-gradient-to-br from-slate-50 via-blue-50/40 to-indigo-50/30 border-2 border-dashed border-blue-200/90 text-center space-y-4">
+                          <div className="w-16 h-16 rounded-3xl bg-blue-100 text-blue-700 mx-auto flex items-center justify-center shadow-inner">
+                            <Lock className="w-8 h-8 text-blue-600" />
                           </div>
-
-                          {/* Juara 1: GenBI of the Month (Emas) */}
-                          <div className="order-1 sm:order-2 p-4 rounded-2xl bg-gradient-to-br from-amber-500/15 via-yellow-500/10 to-amber-600/15 border-2 border-amber-300 shadow-sm flex flex-col justify-between relative overflow-hidden">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black shadow-xs flex items-center gap-1">
-                                <Crown className="w-3 h-3 text-slate-950" />
-                                <span>GenBI of the Month</span>
-                              </span>
-                              <span className="font-black text-sm text-amber-900">
-                                +{topThree[0]?.total_points} P
-                              </span>
+                          <div className="space-y-1.5 max-w-md mx-auto">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black uppercase tracking-wider">
+                              <span>Periode Rekapitulasi Internal</span>
                             </div>
-                            <div className="flex items-center gap-3">
-                              {topThree[0]?.avatar_url ? (
-                                <img
-                                  src={topThree[0].avatar_url}
-                                  alt={topThree[0].full_name}
-                                  className="w-12 h-12 rounded-full object-cover shrink-0 border-2 border-amber-300 shadow-sm"
-                                  crossOrigin="anonymous"
-                                />
-                              ) : (
-                                <div className="w-12 h-12 rounded-full bg-amber-300 text-amber-950 font-black text-sm flex items-center justify-center shrink-0 border-2 border-amber-400 shadow-sm">
-                                  {topThree[0]?.full_name?.charAt(0)}
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <h5 className="font-black text-sm text-slate-900 line-clamp-1">
-                                  {topThree[0]?.full_name}
-                                </h5>
-                                <p className="text-[10px] font-semibold text-slate-600 line-clamp-1">
-                                  {topThree[0]?.division}
-                                </p>
-                                {topThree[0]?.attendance_percentage === 100 && (
-                                  <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">
-                                    ✓ 100% Kehadiran Proker
-                                  </span>
-                                )}
-                              </div>
-                            </div>
+                            <h4 className="text-base sm:text-lg font-black text-slate-900">
+                              Leaderboard Belum Diterbitkan
+                            </h4>
+                            <p className="text-xs text-slate-500 leading-relaxed">
+                              Papan peringkat keaktifan semester ini sedang dalam periode rekapitulasi dan evaluasi berkala oleh BPH. Leaderboard resmi akan dibuka dan diterbitkan oleh Pengurus Harian menjelang akhir periode beasiswa.
+                            </p>
                           </div>
-
-                          {/* Juara 3 (Perunggu) */}
-                          <div className="order-3 p-3.5 rounded-2xl bg-white/95 border border-slate-200 shadow-xs flex flex-col justify-between relative overflow-hidden">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10px] font-black border border-amber-200">
-                                #3 Top Contributor
-                              </span>
-                              <span className="font-black text-xs text-blue-600">
-                                +{topThree[2]?.total_points} P
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2.5">
-                              {topThree[2]?.avatar_url ? (
-                                <img
-                                  src={topThree[2].avatar_url}
-                                  alt={topThree[2].full_name}
-                                  className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 shadow-xs"
-                                  crossOrigin="anonymous"
-                                />
-                              ) : (
-                                <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
-                                  {topThree[2]?.full_name?.charAt(0)}
-                                </div>
-                              )}
-                              <div className="min-w-0">
-                                <h5 className="font-extrabold text-xs text-slate-900 line-clamp-1">
-                                  {topThree[2]?.full_name}
-                                </h5>
-                                <p className="text-[10px] text-slate-400 line-clamp-1">
-                                  {topThree[2]?.division}
-                                </p>
-                              </div>
+                          <div className="p-4 rounded-2xl bg-white border border-blue-200/80 shadow-xs max-w-lg mx-auto text-left flex items-start gap-3">
+                            <Sparkles className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                            <div className="text-xs text-slate-600 space-y-1">
+                              <p className="font-extrabold text-slate-800">Poin Mandiri Anda Tetap Tercatat Aman</p>
+                              <p className="text-[11px] leading-relaxed text-slate-500">
+                                Anda tetap dapat memantau perolehan poin mandiri, riwayat kegiatan, dan predikat keaktifan melalui kartu profil di atas. Ikutilah seluruh kegiatan dan proker GenBI UNMA dengan tulus dan penuh dedikasi!
+                              </p>
                             </div>
                           </div>
                         </div>
-                      );
-                    })()}
+                      </div>
+                    );
+                  }
 
-                    {/* Filter Divisi & Urutan Poin */}
-                    <div className="p-3 bg-white/90 backdrop-blur-md rounded-2xl border border-slate-200/80 space-y-2">
-                      <div className="flex items-center justify-between text-xs font-bold text-slate-600">
-                        <span className="flex items-center gap-1">
-                          <SlidersHorizontal className="w-3.5 h-3.5" />
-                          <span>Filter & Urutkan</span>
-                        </span>
-                        <div className="flex gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setLeaderboardSortOrder('highest')}
-                            className={`px-2 py-0.5 rounded text-[10px] font-extrabold cursor-pointer transition ${
-                              leaderboardSortOrder === 'highest'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                          >
-                            Poin Tertinggi &darr;
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setLeaderboardSortOrder('lowest')}
-                            className={`px-2 py-0.5 rounded text-[10px] font-extrabold cursor-pointer transition ${
-                              leaderboardSortOrder === 'lowest'
-                                ? 'bg-rose-600 text-white'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                          >
-                            Paling Rendah &uarr;
-                          </button>
+                  // 2. TAMPILAN LEADERBOARD UNTUK KADIV (DIVISI SENDIRI) ATAU ANGGOTA (JIKA SUDAH TERBIT)
+                  const effectiveDivision = isKadiv ? kadivDivision : selectedLeaderboardDivision;
+                  const divisionMembers = leaderboard
+                    .filter((m) => !isSuperAdminAccount(m))
+                    .map((m) => sanitizeMemberIdentity(m))
+                    .filter(
+                      (m) => effectiveDivision === 'Semua' || m.division === effectiveDivision
+                    );
+
+                  // Deteksi anggota bermasalah / jarang hadir khusus untuk Kepala Divisi
+                  const lowActiveMembers = isKadiv
+                    ? divisionMembers.filter(
+                        (m) => (m.total_points || 0) < 50 || m.predicate === 'Perlu Pembinaan'
+                      )
+                    : [];
+
+                  return (
+                    <div className="space-y-4 animate-in fade-in duration-200">
+                      {/* Header Banner Leaderboard */}
+                      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-blue-500/10 to-indigo-500/10 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-amber-400 text-slate-950 rounded-xl shadow-xs">
+                            {isKadiv ? <Briefcase className="w-5 h-5 text-slate-950" /> : <Trophy className="w-5 h-5" />}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-xs sm:text-sm font-black text-slate-900">
+                                {isKadiv
+                                  ? `Klasemen Keaktifan Divisi ${kadivDivision}`
+                                  : 'Peringkat Keaktifan GenBI UNMA'}
+                              </h4>
+                              {isKadiv && (
+                                <span className="px-2 py-0.5 rounded-full bg-amber-400/30 text-amber-900 text-[10px] font-black border border-amber-400/40">
+                                  Akses Khusus Kadiv
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500">
+                              {isKadiv
+                                ? `Monitoring internal kehadiran & evaluasi poin khusus anggota divisi ${kadivDivision}`
+                                : 'Evaluasi real-time penilaian keaktifan untuk monitoring BPH'}
+                            </p>
+                          </div>
                         </div>
+                        <button
+                          onClick={fetchLeaderboard}
+                          disabled={isLoadingLeaderboard}
+                          className="p-2 bg-white rounded-xl border border-slate-200 text-slate-600 hover:text-blue-600 transition shadow-xs cursor-pointer self-start sm:self-center"
+                          title="Segarkan data peringkat"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isLoadingLeaderboard ? 'animate-spin' : ''}`} />
+                        </button>
                       </div>
 
-                      {/* Pill Pilihan Divisi */}
-                      <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px]">
-                        {[
-                          'Semua',
-                          'Publikasi dan Sosialisasi',
-                          'Lingkungan Hidup',
-                          'Pendidikan',
-                          'Pengabdian Masyarakat',
-                          'Kewirausahaan',
-                          'BPH',
-                        ].map((divName) => (
-                          <button
-                            key={divName}
-                            type="button"
-                            onClick={() => setSelectedLeaderboardDivision(divName)}
-                            className={`px-2.5 py-1 rounded-xl whitespace-nowrap font-bold transition cursor-pointer ${
-                              selectedLeaderboardDivision === divName
-                                ? 'bg-slate-900 text-white shadow-xs'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                          >
-                            {divName}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                      {/* Notifikasi Monitoring Khusus Kadiv jika ada anggota bermasalah */}
+                      {isKadiv && lowActiveMembers.length > 0 && (
+                        <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5 shadow-xs">
+                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                          <div className="space-y-0.5">
+                            <p className="font-black text-amber-950">
+                              Perhatian Kadiv: {lowActiveMembers.length} Anggota Memerlukan Pembinaan Keaktifan
+                            </p>
+                            <p className="text-[11px] text-amber-800 leading-relaxed">
+                              Anggota dengan akumulasi di bawah standar kelulusan (50 Poin):{' '}
+                              <strong className="text-amber-950">
+                                {lowActiveMembers.map((m) => m.full_name).join(', ')}
+                              </strong>
+                              . Kepala Divisi disarankan melakukan pendekatan persuasif internal agar anggota tidak terkena sanksi administratif beasiswa.
+                            </p>
+                          </div>
+                        </div>
+                      )}
 
-                    {/* Filtered & Sorted Leaderboard Data */}
-                    {(() => {
-                      const filtered = leaderboard
-                        .filter((m) => !isSuperAdminAccount(m))
-                        .map((m) => sanitizeMemberIdentity(m))
-                        .filter(
-                          (m) =>
-                            selectedLeaderboardDivision === 'Semua' ||
-                            m.division === selectedLeaderboardDivision
-                        )
-                        .sort((a, b) =>
-                          leaderboardSortOrder === 'highest'
-                            ? b.total_points - a.total_points
-                            : a.total_points - b.total_points
-                        );
-
-                      if (filtered.length === 0) {
+                      {/* Podium Spotlight: Top 3 */}
+                      {divisionMembers.length >= 3 && (() => {
+                        const topThree = divisionMembers
+                          .slice()
+                          .sort((a, b) => b.total_points - a.total_points)
+                          .slice(0, 3);
                         return (
-                          <div className="p-8 text-center text-xs text-slate-400 bg-white/70 rounded-2xl border border-dashed border-slate-200">
-                            Tidak ada anggota di divisi ini yang ditemukan.
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div className="space-y-2">
-                          {filtered.map((member, idx) => {
-                            const isCurrentUser = member.user_id === user.id;
-                            const rankNumber = idx + 1;
-
-                            const statusBadge =
-                              member.total_points >= 75 ? (
-                                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black">
-                                  Aman / Rekomendasi
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {/* Juara 2 (Perak) */}
+                            <div className="order-2 sm:order-1 p-3.5 rounded-2xl bg-white/95 border border-slate-200 shadow-xs flex flex-col justify-between relative overflow-hidden">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-black border border-slate-200">
+                                  #2 Runner Up
                                 </span>
-                              ) : member.total_points >= 50 ? (
-                                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">
-                                  Pantau Keaktifan
+                                <span className="font-black text-xs text-blue-600">
+                                  +{topThree[1]?.total_points} P
                                 </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black">
-                                  Peringatan / Evaluasi DO
-                                </span>
-                              );
-
-                            return (
-                              <div
-                                key={member.user_id}
-                                className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
-                                  isCurrentUser
-                                    ? 'bg-blue-50/90 border-blue-300 ring-2 ring-blue-500/20 shadow-xs'
-                                    : 'bg-white/90 border-slate-200 hover:border-slate-300'
-                                }`}
-                              >
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <span
-                                    className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
-                                      rankNumber === 1 && leaderboardSortOrder === 'highest'
-                                        ? 'bg-amber-400 text-slate-950 shadow-xs'
-                                        : rankNumber === 2 && leaderboardSortOrder === 'highest'
-                                        ? 'bg-slate-300 text-slate-800'
-                                        : rankNumber === 3 && leaderboardSortOrder === 'highest'
-                                        ? 'bg-amber-700 text-white'
-                                        : 'bg-slate-100 text-slate-600'
-                                    }`}
-                                  >
-                                    {rankNumber}
-                                  </span>
-
-                                  {member.avatar_url ? (
-                                    <img
-                                      src={member.avatar_url}
-                                      alt=""
-                                      className="w-7 h-7 rounded-full object-cover shrink-0 border border-slate-200"
-                                    />
-                                  ) : (
-                                    <div className="w-7 h-7 rounded-full bg-slate-200/80 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
-                                      {member.full_name?.charAt(0)}
-                                    </div>
-                                  )}
-
-                                  <div className="min-w-0">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="text-xs font-black text-slate-900 truncate">
-                                        {member.full_name}
-                                      </span>
-                                      {isCurrentUser && (
-                                        <span className="px-1.5 py-0.2 bg-blue-600 text-white rounded text-[9px] font-bold">
-                                          Anda
-                                        </span>
-                                      )}
-                                      {member.role === 'kadiv' && (
-                                        <span className="inline-flex items-center px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-extrabold">
-                                          Kadiv
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p className="text-[10px] text-slate-400 font-medium">
-                                      NPM {member.npm || member.nim} &bull; {member.division}
-                                    </p>
+                              </div>
+                              <div className="flex items-center gap-2.5">
+                                {topThree[1]?.avatar_url ? (
+                                  <img
+                                    src={topThree[1].avatar_url}
+                                    alt={topThree[1].full_name}
+                                    className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 shadow-xs"
+                                    crossOrigin="anonymous"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
+                                    {topThree[1]?.full_name?.charAt(0)}
                                   </div>
-                                </div>
-
-                                <div className="flex flex-col items-end shrink-0 gap-1">
-                                  <div className="flex items-baseline gap-1">
-                                    <span className="text-sm font-black text-slate-900">
-                                      {member.total_points}
-                                    </span>
-                                    <span className="text-[10px] font-bold text-slate-400">Poin</span>
-                                  </div>
-                                  {statusBadge}
+                                )}
+                                <div className="min-w-0">
+                                  <h5 className="font-extrabold text-xs text-slate-900 line-clamp-1">
+                                    {topThree[1]?.full_name}
+                                  </h5>
+                                  <p className="text-[10px] text-slate-400 line-clamp-1">
+                                    {topThree[1]?.division}
+                                  </p>
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
+                            </div>
 
-                {/* TAB KHUSUS KEPALA DIVISI (KADIV WORKSPACE) */}
-                {activeTab === 'kadiv-workspace' && profile.role === 'kadiv' && (
-                  <div className="space-y-4">
-                    <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-yellow-500/10 to-orange-500/10 border border-amber-300 flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2.5 bg-amber-400 text-slate-950 rounded-xl shadow-xs">
-                          <Briefcase className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h4 className="text-xs sm:text-sm font-black text-slate-900">
-                            Workspace Kepala Divisi {profile.division}
-                          </h4>
-                          <p className="text-[11px] text-slate-600">
-                            Pantau keaktifan rekan satu divisi untuk evaluasi pembinaan internal
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                            {/* Juara 1: Teraktif (Emas) */}
+                            <div className="order-1 sm:order-2 p-4 rounded-2xl bg-gradient-to-br from-amber-500/15 via-yellow-500/10 to-amber-600/15 border-2 border-amber-300 shadow-sm flex flex-col justify-between relative overflow-hidden">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black shadow-xs flex items-center gap-1">
+                                  <Crown className="w-3 h-3 text-slate-950" />
+                                  <span>{isKadiv ? 'Peringkat #1 Divisi' : 'GenBI of the Month'}</span>
+                                </span>
+                                <span className="font-black text-sm text-amber-900">
+                                  +{topThree[0]?.total_points} P
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                {topThree[0]?.avatar_url ? (
+                                  <img
+                                    src={topThree[0].avatar_url}
+                                    alt={topThree[0].full_name}
+                                    className="w-12 h-12 rounded-full object-cover shrink-0 border-2 border-amber-300 shadow-sm"
+                                    crossOrigin="anonymous"
+                                  />
+                                ) : (
+                                  <div className="w-12 h-12 rounded-full bg-amber-300 text-amber-950 font-black text-sm flex items-center justify-center shrink-0 border-2 border-amber-400 shadow-sm">
+                                    {topThree[0]?.full_name?.charAt(0)}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <h5 className="font-black text-sm text-slate-900 line-clamp-1">
+                                    {topThree[0]?.full_name}
+                                  </h5>
+                                  <p className="text-[10px] font-semibold text-slate-600 line-clamp-1">
+                                    {topThree[0]?.division}
+                                  </p>
+                                  {topThree[0]?.attendance_percentage === 100 && (
+                                    <span className="inline-flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[9px] font-bold">
+                                      ✓ 100% Kehadiran Proker
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
 
-                    <div className="space-y-2">
-                      {leaderboard
-                        .filter((m) => m.division === profile.division)
-                        .map((divMember) => {
-                          const isKadivSelf = divMember.user_id === user.id;
-                          return (
-                            <div
-                              key={divMember.user_id}
-                              className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 ${
-                                isKadivSelf
-                                  ? 'bg-amber-50/80 border-amber-300 ring-1 ring-amber-400/40'
-                                  : 'bg-white/90 border-slate-200'
+                            {/* Juara 3 (Perunggu) */}
+                            <div className="order-3 p-3.5 rounded-2xl bg-white/95 border border-slate-200 shadow-xs flex flex-col justify-between relative overflow-hidden">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10px] font-black border border-amber-200">
+                                  #3 Top Contributor
+                                </span>
+                                <span className="font-black text-xs text-blue-600">
+                                  +{topThree[2]?.total_points} P
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2.5">
+                                {topThree[2]?.avatar_url ? (
+                                  <img
+                                    src={topThree[2].avatar_url}
+                                    alt={topThree[2].full_name}
+                                    className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 shadow-xs"
+                                    crossOrigin="anonymous"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
+                                    {topThree[2]?.full_name?.charAt(0)}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <h5 className="font-extrabold text-xs text-slate-900 line-clamp-1">
+                                    {topThree[2]?.full_name}
+                                  </h5>
+                                  <p className="text-[10px] text-slate-400 line-clamp-1">
+                                    {topThree[2]?.division}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Filter Divisi & Urutan Poin */}
+                      <div className="p-3 bg-white/90 backdrop-blur-md rounded-2xl border border-slate-200/80 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-600">
+                          <span className="flex items-center gap-1">
+                            <SlidersHorizontal className="w-3.5 h-3.5" />
+                            <span>{isKadiv ? 'Pengurutan Skor' : 'Filter & Urutkan'}</span>
+                          </span>
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setLeaderboardSortOrder('highest')}
+                              className={`px-2 py-0.5 rounded text-[10px] font-extrabold cursor-pointer transition ${
+                                leaderboardSortOrder === 'highest'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                               }`}
                             >
-                              <div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="font-extrabold text-xs text-slate-900">
-                                    {divMember.full_name}
-                                  </span>
-                                  {isKadivSelf && (
-                                    <span className="px-1.5 py-0.2 bg-amber-400 text-slate-950 rounded text-[9px] font-black">
-                                      Saya (Kadiv)
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="font-mono text-[10px] text-slate-400 block">
-                                  NPM {divMember.npm || divMember.nim}
-                                </span>
-                              </div>
+                              Poin Tertinggi &darr;
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLeaderboardSortOrder('lowest')}
+                              className={`px-2 py-0.5 rounded text-[10px] font-extrabold cursor-pointer transition ${
+                                leaderboardSortOrder === 'lowest'
+                                  ? 'bg-rose-600 text-white'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              Paling Rendah &uarr;
+                            </button>
+                          </div>
+                        </div>
 
-                              <div className="flex items-center gap-4 text-xs text-right">
-                                <div>
-                                  <span className="text-[10px] text-slate-400 block uppercase font-bold">Hadir</span>
-                                  <span className="font-bold text-slate-800">{divMember.total_hadir}x</span>
-                                </div>
-                                <div>
-                                  <span className="text-[10px] text-slate-400 block uppercase font-bold">Izin</span>
-                                  <span className="font-bold text-slate-600">{divMember.total_izin}x</span>
-                                </div>
-                                <div>
-                                  <span className="text-[10px] text-slate-400 block uppercase font-bold">Poin</span>
-                                  <span className="font-black text-blue-600">{divMember.total_points}</span>
-                                </div>
-                              </div>
+                        {/* Pill Pilihan Divisi: Terkunci untuk Kadiv, Terbuka untuk BPH/Anggota yang terbit */}
+                        {isKadiv ? (
+                          <div className="flex items-center gap-2 pt-0.5 text-[11px]">
+                            <span className="px-2.5 py-1 rounded-xl font-bold bg-amber-500 text-slate-950 flex items-center gap-1.5 shadow-xs">
+                              <Briefcase className="w-3 h-3 text-slate-950" />
+                              <span>Divisi {kadivDivision} (Khusus Pemantauan Anda)</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 italic">
+                              *Akses kadiv dibatasi hanya pada divisinya sendiri
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex gap-1.5 overflow-x-auto pb-1 text-[11px]">
+                            {[
+                              'Semua',
+                              'Publikasi dan Sosialisasi',
+                              'Lingkungan Hidup',
+                              'Pendidikan',
+                              'Pengabdian Masyarakat',
+                              'Kewirausahaan',
+                              'BPH',
+                            ].map((divName) => (
+                              <button
+                                key={divName}
+                                type="button"
+                                onClick={() => setSelectedLeaderboardDivision(divName)}
+                                className={`px-2.5 py-1 rounded-xl whitespace-nowrap font-bold transition cursor-pointer ${
+                                  selectedLeaderboardDivision === divName
+                                    ? 'bg-slate-900 text-white shadow-xs'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}
+                              >
+                                {divName}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Filtered & Sorted Leaderboard Data */}
+                      {(() => {
+                        const filtered = divisionMembers
+                          .slice()
+                          .sort((a, b) =>
+                            leaderboardSortOrder === 'highest'
+                              ? b.total_points - a.total_points
+                              : a.total_points - b.total_points
+                          );
+
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="p-8 text-center text-xs text-slate-400 bg-white/70 rounded-2xl border border-dashed border-slate-200">
+                              Tidak ada anggota di divisi ini yang ditemukan.
                             </div>
                           );
-                        })}
+                        }
+
+                        return (
+                          <div className="space-y-2">
+                            {filtered.map((member, idx) => {
+                              const isCurrentUser = member.user_id === user.id;
+                              const rankNumber = idx + 1;
+
+                              const statusBadge =
+                                member.total_points >= 75 ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black">
+                                    Aman / Rekomendasi
+                                  </span>
+                                ) : member.total_points >= 50 ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">
+                                    Pantau Keaktifan
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black">
+                                    Peringatan / Perlu Pembinaan
+                                  </span>
+                                );
+
+                              return (
+                                <div
+                                  key={member.user_id}
+                                  className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                                    isCurrentUser
+                                      ? 'bg-blue-50/90 border-blue-300 ring-2 ring-blue-500/20 shadow-xs'
+                                      : 'bg-white/90 border-slate-200 hover:border-slate-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <span
+                                      className={`w-7 h-7 rounded-xl flex items-center justify-center font-black text-xs shrink-0 ${
+                                        rankNumber === 1 && leaderboardSortOrder === 'highest'
+                                          ? 'bg-amber-400 text-slate-950 shadow-xs'
+                                          : rankNumber === 2 && leaderboardSortOrder === 'highest'
+                                          ? 'bg-slate-300 text-slate-800'
+                                          : rankNumber === 3 && leaderboardSortOrder === 'highest'
+                                          ? 'bg-amber-700 text-white'
+                                          : 'bg-slate-100 text-slate-600'
+                                      }`}
+                                    >
+                                      {rankNumber}
+                                    </span>
+
+                                    {member.avatar_url ? (
+                                      <img
+                                        src={member.avatar_url}
+                                        alt=""
+                                        className="w-7 h-7 rounded-full object-cover shrink-0 border border-slate-200"
+                                      />
+                                    ) : (
+                                      <div className="w-7 h-7 rounded-full bg-slate-200/80 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 border border-slate-200">
+                                        {member.full_name?.charAt(0)}
+                                      </div>
+                                    )}
+
+                                    <div className="min-w-0">
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-xs font-black text-slate-900 truncate">
+                                          {member.full_name}
+                                        </span>
+                                        {isCurrentUser && (
+                                          <span className="px-1.5 py-0.2 bg-blue-600 text-white rounded text-[9px] font-bold">
+                                            Anda
+                                          </span>
+                                        )}
+                                        {member.role === 'kadiv' && (
+                                          <span className="inline-flex items-center px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-extrabold">
+                                            Kadiv
+                                          </span>
+                                        )}
+                                      </div>
+                                      <p className="text-[10px] text-slate-400 font-medium">
+                                        NPM {member.npm || member.nim} &bull; {member.division}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex flex-col items-end shrink-0 gap-1">
+                                    <div className="flex items-baseline gap-1">
+                                      <span className="text-sm font-black text-slate-900">
+                                        {member.total_points}
+                                      </span>
+                                      <span className="text-[10px] font-bold text-slate-400">Poin</span>
+                                    </div>
+                                    {statusBadge}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* TAB KHUSUS REWARD MUBES & VOTING BPH */}
                 {activeTab === 'mubes-awards' && (
@@ -4434,7 +4483,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       {/* Modal Presensi Tugas Delegasi Bank Indonesia (Wilayah 9 & 10 Ciayumajakuning) */}
       {showDelegasiModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100 max-h-[90vh] flex flex-col">
+          <div className="w-full max-w-sm rounded-[32px] bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100 max-h-[92vh] flex flex-col">
             <button
               onClick={() => {
                 setShowDelegasiModal(false);
@@ -4446,122 +4495,103 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </button>
 
             <div>
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black uppercase tracking-wider">
-                  ⭐ Presensi Luar Kampus
-                </span>
-                <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 text-[10px] font-bold">
-                  Wilayah 9 & 10
-                </span>
-              </div>
               <h3 className="text-base font-black text-slate-900">
                 Presensi Tugas Delegasi BI
               </h3>
               <p className="text-xs text-slate-500">
-                Khusus perwakilan GenBI UNMA yang ditugaskan pada agenda Bank Indonesia di Ciayumajakuning (+30 Poin).
+                Perwakilan agenda Bank Indonesia (+{pointSettings.delegasiPoints} Poin)
               </p>
             </div>
 
             {delegasiSuccess ? (
-              <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-2.5">
-                <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
-                <h4 className="text-sm font-bold text-emerald-900">Presensi Delegasi Berhasil Dikirim!</h4>
-                <p className="text-xs text-emerald-700 leading-relaxed">
-                  Laporan tugas delegasi Anda beserta koordinat GPS lokasi & foto bukti telah terkirim dan diteruskan ke Pengurus BPH untuk diverifikasi. Poin reward (+30 Poin) akan otomatis masuk ke evaluasi Anda setelah disetujui.
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                <h4 className="text-xs font-bold text-emerald-900">Pengajuan Berhasil Disimpan</h4>
+                <p className="text-[11px] text-emerald-700">
+                  Laporan tugas delegasi berhasil dikirim dan diteruskan ke Pengurus BPH untuk diverifikasi.
                 </p>
                 <button
                   onClick={() => {
                     setShowDelegasiModal(false);
                     setDelegasiSuccess(false);
                   }}
-                  className="mt-2 w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                  className="mt-2 w-full py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold cursor-pointer"
                 >
-                  Tutup
+                  Selesai
                 </button>
               </div>
             ) : (
-              <div className="space-y-3.5 text-left overflow-y-auto pr-1 flex-1">
+              <div className="space-y-3 text-left overflow-y-auto pr-0.5 flex-1">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase flex items-center justify-between">
-                    <span>Nama Agenda / Kegiatan Delegasi *</span>
+                  <label className="text-[11px] font-bold text-slate-600 uppercase">
+                    Nama Agenda / Kegiatan
                   </label>
                   <input
                     type="text"
                     required
                     value={delegasiTitle}
                     onChange={(e) => setDelegasiTitle(e.target.value)}
-                    placeholder="Contoh: Diseminasi CBP Rupiah & Festival QRIS 2026"
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                    placeholder="Contoh: Diseminasi CBP Rupiah"
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-600/30"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase">
-                    Lokasi Wilayah Tugas (Wilayah 9 & 10) *
+                  <label className="text-[11px] font-bold text-slate-600 uppercase">
+                    Wilayah Penugasan
                   </label>
                   <select
                     value={delegasiCity}
                     onChange={(e) => setDelegasiCity(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 font-medium"
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-600/30 font-medium"
                   >
-                    <option value="Kantor Perwakilan BI Cirebon">Kantor Perwakilan BI Cirebon (Jl. Yos Sudarso)</option>
+                    <option value="Kantor Perwakilan BI Cirebon">KPw BI Cirebon</option>
                     <option value="Kota Cirebon">Kota Cirebon</option>
-                    <option value="Kabupaten Cirebon">Kabupaten Cirebon</option>
-                    <option value="Kabupaten Kuningan">Kabupaten Kuningan</option>
-                    <option value="Kabupaten Indramayu">Kabupaten Indramayu</option>
-                    <option value="Kabupaten Majalengka">Kabupaten Majalengka</option>
-                    <option value="Luar Wilayah (Penugasan Khusus BI)">Luar Wilayah (Penugasan Khusus BI)</option>
+                    <option value="Kabupaten Cirebon">Kab. Cirebon</option>
+                    <option value="Kabupaten Kuningan">Kab. Kuningan</option>
+                    <option value="Kabupaten Indramayu">Kab. Indramayu</option>
+                    <option value="Kabupaten Majalengka">Kab. Majalengka</option>
+                    <option value="Luar Wilayah (Penugasan Khusus BI)">Luar Wilayah (Khusus)</option>
                   </select>
                 </div>
 
-                {/* GPS Lokasi Nyata */}
-                <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-bold text-amber-950">
-                    <span className="flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Koordinat GPS Nyata di Lokasi Acara</span>
+                {/* Lokasi GPS Ringkas */}
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                  <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                    <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span className="text-[11px] font-semibold text-slate-700 truncate">
+                      {delegasiGps ? `GPS: ${delegasiGps.lat}, ${delegasiGps.lng}` : 'Kunci lokasi Anda'}
                     </span>
-                    <button
-                      type="button"
-                      onClick={handleFetchDelegasiGps}
-                      disabled={isFetchingDelegasiGps}
-                      className="text-[10px] px-2.5 py-0.5 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-900 font-black transition cursor-pointer"
-                    >
-                      {isFetchingDelegasiGps ? 'Mendeteksi...' : delegasiGps ? 'Perbarui GPS' : 'Kunci GPS'}
-                    </button>
                   </div>
-                  {delegasiGps ? (
-                    <p className="text-[11px] font-mono text-emerald-700 font-bold">
-                      ✓ GPS Terkunci: {delegasiGps.lat}, {delegasiGps.lng}
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-amber-800">
-                      Tekan tombol "Kunci GPS" di atas untuk merekam lokasi nyata Anda saat penugasan berlangsung.
-                    </p>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleFetchDelegasiGps}
+                    disabled={isFetchingDelegasiGps}
+                    className="text-[10px] px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold transition cursor-pointer shrink-0"
+                  >
+                    {isFetchingDelegasiGps ? 'Mendeteksi...' : delegasiGps ? 'Ubah' : 'Kunci GPS'}
+                  </button>
                 </div>
 
                 {/* Deskripsi Penugasan */}
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase flex items-center justify-between">
-                    <span>Uraian Tugas / No. Surat Tugas *</span>
-                    <span className="text-[10px] text-slate-400 font-normal">Min. 5 karakter</span>
+                  <label className="text-[11px] font-bold text-slate-600 uppercase">
+                    Keterangan Tugas
                   </label>
                   <textarea
                     required
                     rows={2}
                     value={delegasiNote}
                     onChange={(e) => setDelegasiNote(e.target.value)}
-                    placeholder="Contoh: Ditugaskan mewakili GenBI UNMA sebagai LO kepanitiaan bersama komisariat se-Ciayumajakuning."
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+                    placeholder="Contoh: Perwakilan LO acara"
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-600/30"
                   />
                 </div>
 
-                {/* Unggah Foto Selfie / ID Card Bukti di Acara */}
-                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                  <label className="text-[11px] font-bold text-slate-800 uppercase flex items-center justify-between">
-                    <span>Foto Selfie di Lokasi / ID Card Delegasi *</span>
-                    <span className="text-[10px] text-purple-600 font-bold">Google Drive</span>
+                {/* Unggah Foto / ID Card */}
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-600 uppercase">
+                    Foto Bukti Kegiatan
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -4579,11 +4609,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     <button
                       type="button"
                       onClick={() => delegasiFileInputRef.current?.click()}
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-white border border-dashed border-amber-400 rounded-xl text-xs font-bold text-amber-800 hover:bg-amber-50 transition cursor-pointer"
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 transition cursor-pointer"
                     >
-                      <Camera className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span className="truncate max-w-[200px]">
-                        {delegasiFile ? `${delegasiFile.name} (${(delegasiFile.size / 1024).toFixed(0)} KB)` : 'Pilih Foto / Ambil Kamera'}
+                      <Camera className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span className="truncate max-w-[180px]">
+                        {delegasiFile ? delegasiFile.name : 'Pilih Foto / Kamera'}
                       </span>
                     </button>
 
@@ -4595,33 +4625,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                           if (delegasiFileInputRef.current) delegasiFileInputRef.current.value = '';
                         }}
                         className="p-2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                        title="Hapus foto"
                       >
                         <X className="w-4 h-4" />
                       </button>
                     )}
                   </div>
-                  <p className="text-[10px] text-slate-500">
-                    Foto otomatis diunggah ke Google Drive dan langsung terhubung ke dashboard admin BPH.
-                  </p>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleAjukanDelegasi}
                   disabled={isUploadingDelegasi}
-                  className="w-full py-3 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 active:scale-[0.98] text-slate-950 font-black text-xs rounded-xl shadow-md shadow-amber-500/25 transition disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/20 transition disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2 mt-2"
                 >
                   {isUploadingDelegasi ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Mengunggah Bukti & Menyimpan...</span>
+                      <span>Mengirim...</span>
                     </>
                   ) : (
-                    <>
-                      <Award className="w-4 h-4 text-slate-950" />
-                      <span>Kirim Presensi Delegasi (+30 Poin)</span>
-                    </>
+                    <span>Kirim Presensi Delegasi</span>
                   )}
                 </button>
               </div>

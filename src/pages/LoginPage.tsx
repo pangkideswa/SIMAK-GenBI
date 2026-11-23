@@ -15,12 +15,13 @@ import {
   Moon,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { verifyUserPin } from '../lib/authSecurity';
+import { verifyUserPinAsync } from '../lib/authSecurity';
 import { sanitizeMemberIdentity } from '../lib/attendanceSync';
 import { checkRateLimit, recordFailedAttempt, resetRateLimit } from '../lib/rateLimiter';
 import { SatelliteLoader } from '../components/SatelliteLoader';
 import { InteractiveLoginBackground } from '../components/InteractiveLoginBackground';
 import { Footer } from '../components/Footer';
+import { PwaInstallBanner } from '../components/PwaInstallBanner';
 import type { Division, Role } from '../types/database';
 
 interface LoginPageProps {
@@ -263,13 +264,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       setIdentifier('2214100048');
       setPin('genbi123');
       setTimeout(() => {
+        let localOverrides: Record<string, any> = {};
+        try {
+          const raw = localStorage.getItem('simak_whitelist_overrides');
+          if (raw) localOverrides = JSON.parse(raw);
+        } catch {}
+        const ov = localOverrides['2214100048'];
         onLoginSuccess({
           id: 'c3333333-3333-3333-3333-333333333333',
           npm: '2214100048',
           nim: '2214100048',
-          fullName: 'Anisa Permata',
-          division: 'Publikasi dan Sosialisasi',
-          role: 'member',
+          fullName: ov?.full_name || 'Muhamad Fahmi',
+          division: ov?.division || 'Publikasi dan Sosialisasi',
+          role: ov?.role || 'member',
         });
       }, 150);
     }
@@ -360,7 +367,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 ? 'admin@genbi-unma.ac.id'
                 : emailToLogin === '2214100010'
                 ? 'deden@genbi-unma.ac.id'
-                : 'anisa@genbi-unma.ac.id';
+                : 'fahmi@genbi-unma.ac.id';
           } else {
             throw new Error('NPM tidak ditemukan. Silakan gunakan Email atau lakukan Aktivasi Akun.');
           }
@@ -369,8 +376,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         }
       }
 
-      // Periksa apakah PIN pengguna valid (kustom mandiri atau default)
-      const isPinValid = verifyUserPin(identifier, pin);
+      // Periksa apakah PIN pengguna valid (kustom mandiri dengan SHA-256 hash atau default)
+      const isPinValid = await verifyUserPinAsync(identifier, pin);
       if (!isPinValid && !emailToLogin.includes('@')) {
         throw new Error('PIN / Password yang Anda masukkan salah.');
       }
@@ -418,7 +425,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             id: 'c3333333-3333-3333-3333-333333333333',
             npm: '2214100048',
             nim: '2214100048',
-            fullName: ov?.full_name || 'Anisa Permata',
+            fullName: ov?.full_name || 'Muhamad Fahmi',
             division: ov?.division || 'Publikasi dan Sosialisasi',
             role: ov?.role || 'member',
           });
@@ -859,7 +866,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                       👤 Anggota
                     </span>
                     <span className={`text-[9px] block ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                      Anisa
+                      Fahmi
                     </span>
                   </button>
                 </div>
@@ -1112,6 +1119,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           </div>
         </div>
       )}
+
+      {/* Pop-up / Banner Instalasi PWA 1-Klik Khas SIMAK GENBI */}
+      <PwaInstallBanner />
     </div>
   );
 };

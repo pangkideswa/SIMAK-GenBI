@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import type { Event as EventType } from '../types/database';
 import { sanitizeMemberIdentity } from './attendanceSync';
+import { normalizeStudentId } from './memberSync';
 
 const MESH_CHANNEL_NAME = 'simak_realtime_mesh';
 const EVENTS_OVERRIDES_KEY = 'simak_events_overrides';
@@ -288,6 +289,23 @@ export function ensureMeshChannel(): ReturnType<typeof supabase.channel> {
           const filtered = allList.filter((a) => a.id !== safeRecord.id);
           filtered.unshift(safeRecord);
           localStorage.setItem(ALL_ATTENDANCES_KEY, JSON.stringify(filtered));
+
+          // Simpan juga ke cache personal anggota (simak_attendances_*) agar riwayat kartu anggota langsung muncul
+          const targetUserId = safeRecord.user_id || safeRecord.userId;
+          const targetNpm = safeRecord.npm || safeRecord.nim;
+          const keysToUpdate: string[] = [];
+          if (targetUserId) keysToUpdate.push(`simak_attendances_${targetUserId}`);
+          if (targetNpm && targetNpm !== targetUserId) keysToUpdate.push(`simak_attendances_${targetNpm}`);
+
+          for (const k of keysToUpdate) {
+            try {
+              const personalRaw = localStorage.getItem(k);
+              const personalList: any[] = personalRaw ? JSON.parse(personalRaw) : [];
+              const pFiltered = personalList.filter((a) => a.id !== safeRecord.id && a.event_id !== safeRecord.event_id);
+              pFiltered.unshift(safeRecord);
+              localStorage.setItem(k, JSON.stringify(pFiltered));
+            } catch {}
+          }
         } catch {}
 
         try {
@@ -389,7 +407,13 @@ export function ensureMeshChannel(): ReturnType<typeof supabase.channel> {
       const rawEvents = localStorage.getItem(EVENTS_OVERRIDES_KEY);
       const rawAtt = localStorage.getItem(ALL_ATTENDANCES_KEY);
       const rawAwards = localStorage.getItem(AWARDS_STORAGE_KEY);
-      if (rawEvents || rawAtt || rawAwards) {
+      const rawEvals = localStorage.getItem('simak_evaluations_overrides');
+      const rawLeaderboard = localStorage.getItem('simak_leaderboard_cache');
+      const rawPointSettings = localStorage.getItem('simak_point_settings');
+      const rawWhitelist = localStorage.getItem('simak_whitelist_overrides');
+      const rawPublish = localStorage.getItem('simak_leaderboard_published');
+
+      if (rawEvents || rawAtt || rawAwards || rawEvals || rawLeaderboard || rawPointSettings || rawWhitelist || rawPublish) {
         meshChannel?.send({
           type: 'broadcast',
           event: 'PROVIDE_STATE_SYNC',
@@ -397,6 +421,11 @@ export function ensureMeshChannel(): ReturnType<typeof supabase.channel> {
             events: rawEvents ? JSON.parse(rawEvents) : {},
             attendances: rawAtt ? JSON.parse(rawAtt) : [],
             awards: rawAwards ? JSON.parse(rawAwards) : null,
+            evaluations: rawEvals ? JSON.parse(rawEvals) : null,
+            leaderboard: rawLeaderboard ? JSON.parse(rawLeaderboard) : null,
+            pointSettings: rawPointSettings ? JSON.parse(rawPointSettings) : null,
+            whitelist: rawWhitelist ? JSON.parse(rawWhitelist) : null,
+            leaderboardPublish: rawPublish ? JSON.parse(rawPublish) : null,
           },
         });
       }
@@ -428,12 +457,158 @@ export function ensureMeshChannel(): ReturnType<typeof supabase.channel> {
           window.dispatchEvent(new CustomEvent('simak_attendance_sync'));
         } catch {}
       }
+      if (payload.evaluations && typeof payload.evaluations === 'object') {
+        try {
+          const rawOv = localStorage.getItem('simak_evaluations_overrides');
+          const currentOv = rawOv ? JSON.parse(rawOv) : {};
+          const mergedOv = { ...currentOv, ...payload.evaluations };
+          localStorage.setItem('simak_evaluations_overrides', JSON.stringify(mergedOv));
+          window.dispatchEvent(new CustomEvent('simak_evaluations_sync'));
+        } catch {}
+      }
+      if (Array.isArray(payload.leaderboard) && payload.leaderboard.length > 0) {
+        try {
+          localStorage.setItem('simak_leaderboard_cache', JSON.stringify(payload.leaderboard));
+          window.dispatchEvent(new CustomEvent('simak_leaderboard_sync', { detail: payload.leaderboard }));
+        } catch {}
+      }
       if (payload.awards && typeof payload.awards === 'object') {
         try {
           localStorage.setItem(AWARDS_STORAGE_KEY, JSON.stringify(payload.awards));
           window.dispatchEvent(new CustomEvent('simak_awards_sync', { detail: payload.awards }));
         } catch {}
       }
+      if (payload.pointSettings && typeof payload.pointSettings === 'object') {
+        try {
+          localStorage.setItem('simak_point_settings', JSON.stringify(payload.pointSettings));
+          window.dispatchEvent(new CustomEvent('simak_point_settings_updated', { detail: payload.pointSettings }));
+        } catch {}
+      }
+      if (payload.whitelist && typeof payload.whitelist === 'object') {
+        try {
+          const rawWl = localStorage.getItem('simak_whitelist_overrides');
+          const currentWl = rawWl ? JSON.parse(rawWl) : {};
+          const mergedWl = { ...currentWl, ...payload.whitelist };
+          localStorage.setItem('simak_whitelist_overrides', JSON.stringify(mergedWl));
+          window.dispatchEvent(new CustomEvent('simak_member_sync', { detail: { npm: 'ALL_SYNC' } }));
+        } catch {}
+      }
+      if (payload.leaderboardPublish && typeof payload.leaderboardPublish === 'object') {
+        try {
+          localStorage.setItem('simak_leaderboard_published', JSON.stringify(payload.leaderboardPublish));
+          window.dispatchEvent(
+            new CustomEvent('simak_leaderboard_publish_updated', { detail: payload.leaderboardPublish })
+          );
+        } catch {}
+      }
+    }
+  });
+
+  // G. Menerima Perubahan Point Settings dari Super Admin
+  meshChannel.on('broadcast', { event: 'POINT_SETTINGS_MUTATED' }, ({ payload }) => {
+    if (payload && typeof payload === 'object') {
+      try {
+        localStorage.setItem('simak_point_settings', JSON.stringify(payload));
+        window.dispatchEvent(
+          new CustomEvent('simak_point_settings_updated', { detail: payload })
+        );
+      } catch {}
+    }
+  });
+
+  // H. Menerima Perubahan Status Publikasi Leaderboard (BPH / Super Admin)
+  meshChannel.on('broadcast', { event: 'LEADERBOARD_PUBLISH_MUTATED' }, ({ payload }) => {
+    if (payload && typeof payload === 'object') {
+      try {
+        localStorage.setItem('simak_leaderboard_published', JSON.stringify(payload));
+        window.dispatchEvent(
+          new CustomEvent('simak_leaderboard_publish_updated', { detail: payload })
+        );
+      } catch {}
+    }
+  });
+
+  // I. Menerima Perubahan Data Profil / Hak Akses Anggota Lintas Device
+  meshChannel.on('broadcast', { event: 'MEMBER_MUTATED' }, ({ payload }) => {
+    if (payload && (payload.npm || payload.nim)) {
+      const cleanNpm = normalizeStudentId(payload.npm || payload.nim);
+      try {
+        // 1. Simpan ke whitelist overrides
+        const rawWl = localStorage.getItem('simak_whitelist_overrides');
+        const wl = rawWl ? JSON.parse(rawWl) : {};
+        wl[cleanNpm] = {
+          full_name: payload.fullName || payload.full_name,
+          division: payload.division,
+          role: payload.role,
+          jabatan: payload.jabatan,
+        };
+        localStorage.setItem('simak_whitelist_overrides', JSON.stringify(wl));
+
+        // 2. Simpan ke evaluations overrides
+        const rawEv = localStorage.getItem('simak_evaluations_overrides');
+        const evMap = rawEv ? JSON.parse(rawEv) : {};
+        if (evMap[cleanNpm]) {
+          evMap[cleanNpm] = {
+            ...evMap[cleanNpm],
+            full_name: payload.fullName || payload.full_name,
+            division: payload.division,
+            role: payload.role,
+            jabatan: payload.jabatan,
+          };
+          localStorage.setItem('simak_evaluations_overrides', JSON.stringify(evMap));
+        }
+
+        // 3. Update sesi jika akun ini yang sedang login di HP
+        const rawSession = localStorage.getItem('simak_user_session');
+        if (rawSession) {
+          const session = JSON.parse(rawSession);
+          const sessionNpm = normalizeStudentId(session.npm || session.nim);
+          if (sessionNpm === cleanNpm && session.role !== 'superadmin') {
+            const updatedSession = {
+              ...session,
+              fullName: payload.fullName || payload.full_name || session.fullName,
+              division: payload.division || session.division,
+              role: payload.role || session.role,
+              jabatan: payload.jabatan || session.jabatan,
+            };
+            localStorage.setItem('simak_user_session', JSON.stringify(updatedSession));
+          }
+        }
+
+        // 4. Update leaderboard cache
+        const rawLb = localStorage.getItem('simak_leaderboard_cache');
+        if (rawLb) {
+          const lbList = JSON.parse(rawLb);
+          if (Array.isArray(lbList)) {
+            const updatedLb = lbList.map((item: any) => {
+              if (normalizeStudentId(item.npm || item.nim) === cleanNpm) {
+                return {
+                  ...item,
+                  full_name: payload.fullName || payload.full_name || item.full_name,
+                  division: payload.division || item.division,
+                  role: payload.role || item.role,
+                  jabatan: payload.jabatan || item.jabatan,
+                };
+              }
+              return item;
+            });
+            localStorage.setItem('simak_leaderboard_cache', JSON.stringify(updatedLb));
+          }
+        }
+
+        // 5. Trigger event lokal di HP
+        window.dispatchEvent(
+          new CustomEvent('simak_member_sync', {
+            detail: {
+              npm: cleanNpm,
+              full_name: payload.fullName || payload.full_name,
+              division: payload.division,
+              role: payload.role,
+              jabatan: payload.jabatan,
+            },
+          })
+        );
+      } catch {}
     }
   });
 
@@ -566,3 +741,47 @@ export async function broadcastAwardsMutated(awardsState: any): Promise<void> {
     });
   } catch {}
 }
+
+/**
+ * Broadcast perubahan setelan poin global (Super Admin) ke seluruh perangkat aktif
+ */
+export async function broadcastPointSettingsMutated(settings: any): Promise<void> {
+  const ch = ensureMeshChannel();
+  try {
+    await ch.send({
+      type: 'broadcast',
+      event: 'POINT_SETTINGS_MUTATED',
+      payload: settings,
+    });
+  } catch {}
+}
+
+/**
+ * Broadcast perubahan data anggota / hak akses ke seluruh perangkat aktif via WebSocket Realtime
+ */
+export async function broadcastMemberUpdated(payload: any): Promise<void> {
+  const ch = ensureMeshChannel();
+  try {
+    await ch.send({
+      type: 'broadcast',
+      event: 'MEMBER_MUTATED',
+      payload,
+    });
+  } catch {}
+}
+
+/**
+ * Broadcast perubahan status publikasi Leaderboard ke seluruh perangkat aktif via WebSocket Realtime
+ */
+export async function broadcastLeaderboardPublishMutated(payload: any): Promise<void> {
+  const ch = ensureMeshChannel();
+  try {
+    await ch.send({
+      type: 'broadcast',
+      event: 'LEADERBOARD_PUBLISH_MUTATED',
+      payload,
+    });
+  } catch {}
+}
+
+

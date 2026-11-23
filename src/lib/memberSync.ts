@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { Division, Role } from '../types/database';
+import { broadcastMemberUpdated } from './meshSync';
 
 export interface MemberSyncPayload {
   npm: string;
@@ -137,7 +138,22 @@ export async function syncMemberUpdate(payload: MemberSyncPayload): Promise<{
     console.warn('Gagal dispatch custom event:', e);
   }
 
-  // 6. Simpan ke Supabase Database secara aman
+  // 6. Siarkan ke Realtime WebSocket Mesh agar seluruh perangkat aktif (Desktop & Mobile) tersinkron otomatis
+  try {
+    await broadcastMemberUpdated({
+      npm: cleanId,
+      nim: payload.nim || cleanId,
+      fullName: payload.fullName.trim(),
+      full_name: payload.fullName.trim(),
+      division: payload.division,
+      role: payload.role,
+      jabatan: payload.jabatan?.trim(),
+    });
+  } catch (e) {
+    console.warn('Gagal broadcast member update ke mesh:', e);
+  }
+
+  // 7. Simpan ke Supabase Database secara aman
   let dbError: any = null;
   const dbData: Record<string, any> = {
     full_name: payload.fullName.trim(),
@@ -146,10 +162,10 @@ export async function syncMemberUpdate(payload: MemberSyncPayload): Promise<{
   };
 
   try {
-    // A. Update authorized_members
+    // A. Update authorized_members (mendukung kolom npm maupun nim)
     const { error: authErr } = await (supabase.from('authorized_members') as any)
       .update(dbData)
-      .eq('npm', cleanId);
+      .or(`npm.eq.${cleanId},nim.eq.${cleanId}`);
     if (authErr) {
       console.warn('Catatan Supabase authorized_members:', authErr.message);
     }

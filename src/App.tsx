@@ -24,6 +24,19 @@ export function App() {
       const saved = localStorage.getItem('simak_user_session');
       if (saved) {
         const parsed = sanitizeMemberIdentity(JSON.parse(saved));
+        const cleanId = parsed.npm || parsed.nim;
+        if (cleanId) {
+          try {
+            const rawWl = localStorage.getItem('simak_whitelist_overrides');
+            if (rawWl) {
+              const wl = JSON.parse(rawWl);
+              const ov = wl[cleanId];
+              if (ov?.full_name) parsed.fullName = ov.full_name;
+              if (ov?.division) parsed.division = ov.division;
+              if (ov?.role) parsed.role = ov.role;
+            }
+          } catch {}
+        }
         return {
           ...parsed,
           npm: parsed.npm || parsed.nim || '-',
@@ -95,8 +108,38 @@ export function App() {
       }
     });
 
+    // Listener pembaruan data member secara realtime lintas perangkat (Desktop & Mobile)
+    const handleMemberSync = (e: any) => {
+      const detail = e?.detail;
+      if (!detail) return;
+      setUser((prev) => {
+        if (!prev) return null;
+        const myNpm = prev.npm || prev.nim;
+        if (detail.npm === 'ALL_SYNC') {
+          try {
+            const raw = localStorage.getItem('simak_user_session');
+            if (raw) return JSON.parse(raw);
+          } catch {}
+          return prev;
+        }
+        if (detail.npm === myNpm || detail.nim === myNpm) {
+          const updated: UserSession = {
+            ...prev,
+            fullName: detail.full_name || detail.fullName || prev.fullName,
+            division: detail.division || prev.division,
+            role: detail.role || prev.role,
+          };
+          localStorage.setItem('simak_user_session', JSON.stringify(updated));
+          return updated;
+        }
+        return prev;
+      });
+    };
+    window.addEventListener('simak_member_sync', handleMemberSync);
+
     return () => {
       authListener.subscription.unsubscribe();
+      window.removeEventListener('simak_member_sync', handleMemberSync);
     };
   }, []);
 

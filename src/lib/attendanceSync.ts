@@ -151,13 +151,13 @@ export function purgeSuperAdminFromCache(): void {
         } catch {}
       }
 
-      // 5. Perbaikan Otomatis / Self-Healing Akun Anisa Permata (2214100048)
+      // 5. Perbaikan Otomatis / Self-Healing Akun Muhamad Fahmi (2214100048)
       // Mencegah akumulasi poin tidak wajar (misal 310 poin / 21 kehadiran) akibat bug multi-scan kamera
       try {
-        const anisaNpm = '2214100048';
-        const anisaKeys = [`simak_attendances_${anisaNpm}`, 'simak_attendances_c3333333-3333-3333-3333-333333333333'];
-        for (const ak of anisaKeys) {
-          const rawA = localStorage.getItem(ak);
+        const fahmiNpm = '2214100048';
+        const fahmiKeys = [`simak_attendances_${fahmiNpm}`, 'simak_attendances_c3333333-3333-3333-3333-333333333333'];
+        for (const fk of fahmiKeys) {
+          const rawA = localStorage.getItem(fk);
           if (rawA) {
             const list = JSON.parse(rawA);
             if (Array.isArray(list)) {
@@ -167,7 +167,7 @@ export function purgeSuperAdminFromCache(): void {
                 seenEvents.add(item.event_id);
                 return true;
               });
-              localStorage.setItem(ak, JSON.stringify(dedup));
+              localStorage.setItem(fk, JSON.stringify(dedup));
             }
           }
         }
@@ -190,15 +190,23 @@ export function purgeSuperAdminFromCache(): void {
         const rawEvMap = localStorage.getItem(EVALUATIONS_OVERRIDES_KEY);
         if (rawEvMap) {
           const evMap = JSON.parse(rawEvMap);
-          const anisa = evMap[anisaNpm] || evMap['c3333333-3333-3333-3333-333333333333'];
-          if (anisa && (Number(anisa.total_points) > 100 || Number(anisa.total_hadir) > 7)) {
-            const fixedAnisa = {
-              ...anisa,
-              full_name: 'Anisa Permata',
-              npm: anisaNpm,
-              nim: anisaNpm,
-              division: 'Publikasi dan Sosialisasi',
-              role: 'member',
+          const fahmiRecord = evMap[fahmiNpm] || evMap['c3333333-3333-3333-3333-333333333333'];
+          if (fahmiRecord && (Number(fahmiRecord.total_points) > 100 || Number(fahmiRecord.total_hadir) > 7)) {
+            let memberName = 'Muhamad Fahmi';
+            try {
+              const rawWl = localStorage.getItem('simak_whitelist_overrides');
+              if (rawWl) {
+                const wl = JSON.parse(rawWl);
+                if (wl[fahmiNpm]?.full_name) memberName = wl[fahmiNpm].full_name;
+              }
+            } catch {}
+            const fixedFahmi = {
+              ...fahmiRecord,
+              full_name: memberName,
+              npm: fahmiNpm,
+              nim: fahmiNpm,
+              division: fahmiRecord.division || 'Publikasi dan Sosialisasi',
+              role: fahmiRecord.role || 'member',
               total_points: 75,
               total_hadir: 5,
               total_izin: 2,
@@ -207,11 +215,11 @@ export function purgeSuperAdminFromCache(): void {
               predicate: 'Aktif',
               avatar_url: null,
             };
-            evMap[anisaNpm] = fixedAnisa;
-            evMap['c3333333-3333-3333-3333-333333333333'] = fixedAnisa;
+            evMap[fahmiNpm] = fixedFahmi;
+            evMap['c3333333-3333-3333-3333-333333333333'] = fixedFahmi;
             localStorage.setItem(EVALUATIONS_OVERRIDES_KEY, JSON.stringify(evMap));
-            localStorage.setItem(`simak_eval_${anisaNpm}`, JSON.stringify(fixedAnisa));
-            localStorage.setItem('simak_eval_c3333333-3333-3333-3333-333333333333', JSON.stringify(fixedAnisa));
+            localStorage.setItem(`simak_eval_${fahmiNpm}`, JSON.stringify(fixedFahmi));
+            localStorage.setItem('simak_eval_c3333333-3333-3333-3333-333333333333', JSON.stringify(fixedFahmi));
           }
         }
       } catch {}
@@ -231,6 +239,44 @@ export function purgeSuperAdminFromCache(): void {
     for (const k of keysToRemove) {
       localStorage.removeItem(k);
     }
+
+    // 5. Normalisasi data nama 2214100048 jika di cache browser masih tersimpan nama lama
+    try {
+      const fahmiNpm = '2214100048';
+      let resolvedName = 'Muhamad Fahmi';
+      const rawWl = localStorage.getItem('simak_whitelist_overrides');
+      if (rawWl) {
+        const wl = JSON.parse(rawWl);
+        if (wl[fahmiNpm]?.full_name) resolvedName = wl[fahmiNpm].full_name;
+      }
+
+      // Bersihkan leaderboard cache
+      const rawLb = localStorage.getItem('simak_leaderboard_cache');
+      if (rawLb) {
+        const lb = JSON.parse(rawLb);
+        if (Array.isArray(lb)) {
+          let lbChanged = false;
+          const updatedLb = lb.map((m: any) => {
+            if ((m.npm === fahmiNpm || m.nim === fahmiNpm) && (m.full_name?.toLowerCase().includes('anisa') || !m.full_name)) {
+              lbChanged = true;
+              return { ...m, full_name: resolvedName };
+            }
+            return m;
+          });
+          if (lbChanged) localStorage.setItem('simak_leaderboard_cache', JSON.stringify(updatedLb));
+        }
+      }
+
+      // Bersihkan evaluations overrides
+      const rawEv = localStorage.getItem(EVALUATIONS_OVERRIDES_KEY);
+      if (rawEv) {
+        const ev = JSON.parse(rawEv);
+        if (ev[fahmiNpm] && (ev[fahmiNpm].full_name?.toLowerCase().includes('anisa') || !ev[fahmiNpm].full_name)) {
+          ev[fahmiNpm].full_name = resolvedName;
+          localStorage.setItem(EVALUATIONS_OVERRIDES_KEY, JSON.stringify(ev));
+        }
+      }
+    } catch {}
   } catch {}
 }
 
@@ -541,6 +587,28 @@ export function sanitizeMemberIdentity<T extends Record<string, any>>(member: T)
       clone.proof_url = null;
     }
   }
+
+  // Normalisasi akun 2214100048 agar selalu tertera Muhamad Fahmi (sesuai whitelist / overrides)
+  if (
+    rawNpm.includes('2214100048') ||
+    userId.includes('c3333333-3333') ||
+    rawName.toLowerCase().includes('anisa')
+  ) {
+    let resolvedName = 'Muhamad Fahmi';
+    try {
+      const rawWl = localStorage.getItem('simak_whitelist_overrides');
+      if (rawWl) {
+        const wl = JSON.parse(rawWl);
+        if (wl['2214100048']?.full_name) resolvedName = wl['2214100048'].full_name;
+      }
+    } catch {}
+
+    clone.full_name = resolvedName;
+    clone.fullName = resolvedName;
+    clone.name = resolvedName;
+    clone.member_name = resolvedName;
+    clone.memberFullName = resolvedName;
+  }
   return clone as T;
 }
 
@@ -683,8 +751,8 @@ export function applyEvaluationsOverrides(
           total_alfa: ov.total_alfa ?? updated.total_alfa,
           attendance_percentage: ov.attendance_percentage ?? updated.attendance_percentage,
           predicate: ov.predicate ?? updated.predicate,
-          ...(ov.full_name ? { full_name: ov.full_name } : {}),
-          ...(ov.division ? { division: ov.division } : {}),
+          ...(ov.full_name && !wl?.full_name ? { full_name: ov.full_name } : {}),
+          ...(ov.division && !wl?.division ? { division: ov.division } : {}),
           ...(ov.role ? { role: ov.role } : {}),
           ...((ov.jabatan ? { jabatan: ov.jabatan } : {}) as any),
         };
@@ -757,6 +825,8 @@ export function isEventAttendedByUser(
  * Setujui Presensi Izin / Delegasi secara Terpadu
  * Mengupdate status verified di seluruh storage lokal dan menambahkan poin jika delegasi
  */
+import { getPointSettings } from './pointSettings';
+
 export async function approveAttendanceSync(
   id: string,
   isDelegasi: boolean
@@ -783,7 +853,8 @@ export async function approveAttendanceSync(
   if (targetUser) {
     const userId = targetUser.user_id;
     const cleanNpm = normalizeStudentId(targetUser.npm || targetUser.nim);
-    const addedPoints = isDelegasi ? 30 : 0;
+    const delegasiPointsSetting = getPointSettings().delegasiPoints;
+    const addedPoints = isDelegasi ? delegasiPointsSetting : 0;
 
     const userKeys = [`simak_attendances_${userId}`];
     if (cleanNpm && cleanNpm !== userId) userKeys.push(`simak_attendances_${cleanNpm}`);

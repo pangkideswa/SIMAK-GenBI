@@ -16,6 +16,7 @@ import {
   Lock,
   Unlock,
   Eye,
+  EyeOff,
   CalendarDays,
   UserCheck,
   Maximize2,
@@ -69,6 +70,11 @@ import {
 import { fetchEventsCloud, fetchEvaluationsCloud, initMeshSync } from '../lib/meshSync';
 import { getAcademicPeriods, AcademicPeriod } from '../lib/periodSync';
 import { Footer } from '../components/Footer';
+import {
+  getLeaderboardPublishState,
+  setLeaderboardPublishState,
+  LeaderboardPublishState,
+} from '../lib/leaderboardPublish';
 import {
   recordUnifiedAttendance,
   applyEvaluationsOverrides,
@@ -274,8 +280,8 @@ const DEFAULT_SAMPLE_LEADERBOARD: MemberEvaluation[] = [
     user_id: 'c3333333-3333-3333-3333-333333333333',
     npm: '2214100048',
     nim: '2214100048',
-    email: 'anisa@genbi-unma.ac.id',
-    full_name: 'Anisa Permata',
+    email: 'fahmi@genbi-unma.ac.id',
+    full_name: 'Muhamad Fahmi',
     division: 'Publikasi dan Sosialisasi',
     role: 'member',
     avatar_url: null,
@@ -317,7 +323,7 @@ const DEFAULT_SAMPLE_WHITELIST: Array<{
   { npm: '2214100010', nim: '2214100010', full_name: 'Deden Kurniawan', division: 'Publikasi dan Sosialisasi', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
   { npm: '2214100025', nim: '2214100025', full_name: 'Siti Rahmawati', division: 'Pendidikan', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
   { npm: '2214100033', nim: '2214100033', full_name: 'Fajar Pratama', division: 'Lingkungan Hidup', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
-  { npm: '2214100048', nim: '2214100048', full_name: 'Anisa Permata', division: 'Publikasi dan Sosialisasi', role: 'member', is_claimed: true, created_at: new Date().toISOString() },
+  { npm: '2214100048', nim: '2214100048', full_name: 'Muhamad Fahmi', division: 'Publikasi dan Sosialisasi', role: 'member', is_claimed: true, created_at: new Date().toISOString() },
   { npm: '2214100052', nim: '2214100052', full_name: 'Rizky Ramadhan', division: 'Kewirausahaan', role: 'member', is_claimed: false, created_at: new Date().toISOString() },
   { npm: '2214100067', nim: '2214100067', full_name: 'Nadia Putri', division: 'Pengabdian Masyarakat', role: 'member', is_claimed: false, created_at: new Date().toISOString() },
 ];
@@ -367,6 +373,31 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [bphAttendedEventIds, setBphAttendedEventIds] = useState<string[]>([]);
   const [isSubmittingBphAtt, setIsSubmittingBphAtt] = useState(false);
   const [isPushEnabled, setIsPushEnabled] = useState(isPushNotificationEnabled());
+
+  // Status Publikasi Leaderboard ke Anggota (BPH Control)
+  const [leaderboardPublish, setLeaderboardPublish] = useState<LeaderboardPublishState>(() =>
+    getLeaderboardPublishState()
+  );
+  const [isTogglingPublish, setIsTogglingPublish] = useState(false);
+
+  const handleToggleLeaderboardPublish = async () => {
+    setIsTogglingPublish(true);
+    try {
+      const next = !leaderboardPublish.isPublished;
+      const updated = await setLeaderboardPublishState(next, user.fullName || 'BPH GenBI UNMA');
+      setLeaderboardPublish(updated);
+      showToast(
+        next
+          ? 'Sukses! Leaderboard keaktifan resmi DITERBITKAN ke seluruh akun anggota.'
+          : 'Leaderboard keaktifan kini DIRAHSIAKAN (Draft) dari akun anggota.',
+        next ? 'success' : 'info'
+      );
+    } catch {
+      showToast('Gagal mengubah status publikasi leaderboard.', 'error');
+    } finally {
+      setIsTogglingPublish(false);
+    }
+  };
 
   // Events State
   const [events, setEvents] = useState<EventType[]>([]);
@@ -1211,6 +1242,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       },
     });
 
+    const handlePublishUpdated = (e: any) => {
+      if (e?.detail) setLeaderboardPublish(e.detail);
+      else setLeaderboardPublish(getLeaderboardPublishState());
+    };
+
+    window.addEventListener('simak_leaderboard_publish_updated', handlePublishUpdated);
     window.addEventListener('simak_member_sync', handleSyncEvent);
     window.addEventListener('simak_event_sync', handleEventSync);
     window.addEventListener('simak_event_lock_sync', handleLockSync);
@@ -1227,6 +1264,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
     return () => {
       cleanupMesh();
+      window.removeEventListener('simak_leaderboard_publish_updated', handlePublishUpdated);
       window.removeEventListener('simak_member_sync', handleSyncEvent);
       window.removeEventListener('simak_event_sync', handleEventSync);
       window.removeEventListener('simak_event_lock_sync', handleLockSync);
@@ -2821,9 +2859,20 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               {/* Header Banner Leaderboard */}
               <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-300/30 text-amber-300 text-[11px] font-black uppercase mb-2">
-                    <Crown className="w-3.5 h-3.5 fill-amber-400" />
-                    <span>Leaderboard & Evaluasi Poin Resmi</span>
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-300/30 text-amber-300 text-[11px] font-black uppercase">
+                      <Crown className="w-3.5 h-3.5 fill-amber-400" />
+                      <span>Leaderboard & Evaluasi Poin Resmi</span>
+                    </div>
+                    {leaderboardPublish.isPublished ? (
+                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-black">
+                        ✓ Terbit ke Anggota
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[11px] font-black">
+                        🔒 Dirahasiakan (Draft Internal)
+                      </span>
+                    )}
                   </div>
                   <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight">
                     Klasemen Poin Keaktifan Anggota & BPH
@@ -2833,7 +2882,33 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 self-start sm:self-center">
+                <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
+                  <button
+                    onClick={handleToggleLeaderboardPublish}
+                    disabled={isTogglingPublish}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-md active:scale-95 disabled:opacity-50 ${
+                      leaderboardPublish.isPublished
+                        ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                        : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                    }`}
+                    title={
+                      leaderboardPublish.isPublished
+                        ? 'Klik untuk menyembunyikan leaderboard dari akun anggota'
+                        : 'Klik untuk menerbitkan leaderboard ke seluruh akun anggota'
+                    }
+                  >
+                    {leaderboardPublish.isPublished ? (
+                      <>
+                        <EyeOff className="w-3.5 h-3.5" />
+                        <span>{isTogglingPublish ? 'Memproses...' : 'Tutup / Rahasiakan'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>{isTogglingPublish ? 'Memproses...' : 'Terbitkan ke Anggota'}</span>
+                      </>
+                    )}
+                  </button>
                   <button
                     onClick={handleExportCSV}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 transition cursor-pointer backdrop-blur-md shadow-xs active:scale-95"

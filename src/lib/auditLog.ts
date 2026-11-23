@@ -13,7 +13,9 @@ export type AuditActionType =
   | 'PERIOD_DELETE'
   | 'WHITELIST_ADD'
   | 'WHITELIST_EDIT'
-  | 'SYSTEM_BACKUP';
+  | 'SYSTEM_BACKUP'
+  | 'SETTINGS_UPDATE'
+  | 'EVALUATION_OVERRIDE';
 
 export interface AuditLog {
   id: string;

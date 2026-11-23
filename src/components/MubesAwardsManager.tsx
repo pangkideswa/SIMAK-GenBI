@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Trophy,
   Award,
   Lock,
   Globe,
@@ -168,10 +167,6 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
         <div className="absolute top-0 right-0 -mt-10 -mr-10 w-64 h-64 rounded-full bg-blue-500/15 blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-black uppercase tracking-wider">
-              <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span>Musyawarah Besar GenBI UNMA</span>
-            </div>
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
               Sidang & Kurasi Reward Mubes (Annual Awards)
             </h2>
