@@ -476,7 +476,7 @@ VALUES
   ('2214100010', '2214100010', 'Deden Kurniawan', 'Publikasi dan Sosialisasi', 'kadiv', false),
   ('2214100025', '2214100025', 'Siti Rahmawati', 'Pendidikan', 'kadiv', false),
   ('2214100033', '2214100033', 'Fajar Pratama', 'Lingkungan Hidup', 'kadiv', false),
-  ('2214100048', '2214100048', 'Anisa Permata', 'Publikasi dan Sosialisasi', 'member', false),
+  ('2214100048', '2214100048', 'Muhamad Fahmi', 'Publikasi dan Sosialisasi', 'member', false),
   ('2214100052', '2214100052', 'Rizky Ramadhan', 'Kewirausahaan', 'member', false),
   ('2214100067', '2214100067', 'Nadia Putri', 'Pengabdian Masyarakat', 'member', false)
 ON CONFLICT (npm) DO UPDATE SET
@@ -486,7 +486,7 @@ ON CONFLICT (npm) DO UPDATE SET
 
 -- 14. SEED AKUN RESMI AUTH & PROFIL (BPH, Kadiv, Anggota - Password default: genbi123)
 DELETE FROM auth.users 
-WHERE email IN ('admin@genbi-unma.ac.id', 'deden@genbi-unma.ac.id', 'anisa@genbi-unma.ac.id') 
+WHERE email IN ('admin@genbi-unma.ac.id', 'deden@genbi-unma.ac.id', 'fahmi@genbi-unma.ac.id') 
    OR id IN ('a1111111-1111-1111-1111-111111111111', 'b2222222-2222-2222-2222-222222222222', 'c3333333-3333-3333-3333-333333333333')
    OR id IN (
      SELECT id FROM public.profiles 
@@ -496,7 +496,7 @@ WHERE email IN ('admin@genbi-unma.ac.id', 'deden@genbi-unma.ac.id', 'anisa@genbi
 
 DELETE FROM public.profiles 
 WHERE id IN ('a1111111-1111-1111-1111-111111111111', 'b2222222-2222-2222-2222-222222222222', 'c3333333-3333-3333-3333-333333333333')
-   OR email IN ('admin@genbi-unma.ac.id', 'deden@genbi-unma.ac.id', 'anisa@genbi-unma.ac.id')
+   OR email IN ('admin@genbi-unma.ac.id', 'deden@genbi-unma.ac.id', 'fahmi@genbi-unma.ac.id')
    OR npm IN ('2414101078', '2214100010', '2214100048')
    OR nim IN ('2414101078', '2214100010', '2214100048');
 
@@ -504,13 +504,13 @@ INSERT INTO auth.users (id, instance_id, email, encrypted_password, email_confir
 VALUES
   ('a1111111-1111-1111-1111-111111111111', '00000000-0000-0000-0000-000000000000', 'admin@genbi-unma.ac.id', crypt('genbi123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}', '{"npm":"2414101078","nim":"2414101078","full_name":"Ahmad Fauzi","division":"BPH","role":"admin"}', NOW(), NOW(), 'authenticated', 'authenticated'),
   ('b2222222-2222-2222-2222-222222222222', '00000000-0000-0000-0000-000000000000', 'deden@genbi-unma.ac.id', crypt('genbi123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}', '{"npm":"2214100010","nim":"2214100010","full_name":"Deden Kurniawan","division":"Publikasi dan Sosialisasi","role":"kadiv"}', NOW(), NOW(), 'authenticated', 'authenticated'),
-  ('c3333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000', 'anisa@genbi-unma.ac.id', crypt('genbi123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}', '{"npm":"2214100048","nim":"2214100048","full_name":"Anisa Permata","division":"Publikasi dan Sosialisasi","role":"member"}', NOW(), NOW(), 'authenticated', 'authenticated');
+  ('c3333333-3333-3333-3333-333333333333', '00000000-0000-0000-0000-000000000000', 'fahmi@genbi-unma.ac.id', crypt('genbi123', gen_salt('bf')), NOW(), '{"provider":"email","providers":["email"]}', '{"npm":"2214100048","nim":"2214100048","full_name":"Muhamad Fahmi","division":"Publikasi dan Sosialisasi","role":"member"}', NOW(), NOW(), 'authenticated', 'authenticated');
 
 INSERT INTO public.profiles (id, npm, nim, email, full_name, division, role, study_program, is_activated)
 VALUES
   ('a1111111-1111-1111-1111-111111111111', '2414101078', '2414101078', 'admin@genbi-unma.ac.id', 'Ahmad Fauzi', 'BPH', 'admin', 'Informatika', TRUE),
   ('b2222222-2222-2222-2222-222222222222', '2214100010', '2214100010', 'deden@genbi-unma.ac.id', 'Deden Kurniawan', 'Publikasi dan Sosialisasi', 'kadiv', 'Sistem Informasi', TRUE),
-  ('c3333333-3333-3333-3333-333333333333', '2214100048', '2214100048', 'anisa@genbi-unma.ac.id', 'Anisa Permata', 'Publikasi dan Sosialisasi', 'member', 'Manajemen', TRUE)
+  ('c3333333-3333-3333-3333-333333333333', '2214100048', '2214100048', 'fahmi@genbi-unma.ac.id', 'Muhamad Fahmi', 'Publikasi dan Sosialisasi', 'member', 'Manajemen', TRUE)
 ON CONFLICT (id) DO UPDATE SET
   npm = EXCLUDED.npm,
   nim = EXCLUDED.nim,

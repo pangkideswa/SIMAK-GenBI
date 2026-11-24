@@ -36,8 +36,8 @@ const DEFAULT_AUDIT_LOGS: AuditLog[] = [
     actorName: 'Ahmad Fauzi',
     actorRole: 'BPH',
     actionType: 'PERIOD_ACTIVATE',
-    target: 'T.A. 2026/2027 Ganjil',
-    description: 'Menetapkan periode "T.A. 2026/2027 Ganjil" sebagai periode kepengurusan aktif SIMAK GENBI.',
+    target: '2026/2027 Ganjil',
+    description: 'Menetapkan periode "2026/2027 Ganjil" sebagai periode kepengurusan aktif SIMAK GENBI.',
   },
   {
     id: 'log-2',

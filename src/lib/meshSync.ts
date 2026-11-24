@@ -12,7 +12,7 @@ export interface MeshHandlers {
   onEventMutated?: (event: EventType) => void;
   onEventDeleted?: (eventId: string) => void;
   onAttendanceMutated?: (record: any) => void;
-  onAttendanceDeleted?: (attendanceId: string, eventId?: string) => void;
+  onAttendanceDeleted?: (attendanceId: string, eventId?: string, extra?: any) => void;
   onAwardsMutated?: (awardsState: any) => void;
 }
 
@@ -159,13 +159,11 @@ export async function fetchEvaluationsCloud(): Promise<any[] | null> {
                 const key = ev.npm || ev.nim || ev.user_id;
                 const safeEv = sanitizeMemberIdentity(ev);
                 safeEv.total_points = Math.min(100, Math.max(0, safeEv.total_points || 0));
-                if (!currentOv[key] || (safeEv.total_points >= (currentOv[key].total_points || 0))) {
-                  currentOv[key] = {
-                    ...currentOv[key],
-                    ...safeEv,
-                  };
-                  changed = true;
-                }
+                currentOv[key] = {
+                  ...currentOv[key],
+                  ...safeEv,
+                };
+                changed = true;
               }
             }
             if (changed) {
@@ -367,17 +365,91 @@ export function ensureMeshChannel(): ReturnType<typeof supabase.channel> {
   // D. Menerima Hapus Presensi dari Peer
   meshChannel.on('broadcast', { event: 'ATTENDANCE_DELETED' }, ({ payload }) => {
     if (payload && payload.attendanceId) {
+      // 1. Bersihkan dari local storage perangkat ini
+      try {
+        const rawDel = localStorage.getItem('simak_deleted_attendances');
+        const delList: string[] = rawDel ? JSON.parse(rawDel) : [];
+        if (!delList.includes(payload.attendanceId)) {
+          delList.push(payload.attendanceId);
+          localStorage.setItem('simak_deleted_attendances', JSON.stringify(delList));
+        }
+
+        const rawAll = localStorage.getItem('simak_all_attendances');
+        if (rawAll) {
+          const allList = JSON.parse(rawAll);
+          const filtered = allList.filter((a: any) =>
+            a.id !== payload.attendanceId &&
+            !(payload.eventId && (a.event_id === payload.eventId || a.eventId === payload.eventId) &&
+              ((payload.userId && a.user_id === payload.userId) ||
+               (payload.npm && normalizeStudentId(a.npm || a.nim) === normalizeStudentId(payload.npm))))
+          );
+          localStorage.setItem('simak_all_attendances', JSON.stringify(filtered));
+        }
+
+        if (payload.userId) {
+          const rawUser = localStorage.getItem(`simak_attendances_${payload.userId}`);
+          if (rawUser) {
+            const list = JSON.parse(rawUser);
+            const filtered = list.filter((a: any) => a.id !== payload.attendanceId && a.event_id !== payload.eventId);
+            localStorage.setItem(`simak_attendances_${payload.userId}`, JSON.stringify(filtered));
+          }
+        }
+        if (payload.npm) {
+          const clean = normalizeStudentId(payload.npm);
+          const rawUser = localStorage.getItem(`simak_attendances_${clean}`);
+          if (rawUser) {
+            const list = JSON.parse(rawUser);
+            const filtered = list.filter((a: any) => a.id !== payload.attendanceId && a.event_id !== payload.eventId);
+            localStorage.setItem(`simak_attendances_${clean}`, JSON.stringify(filtered));
+          }
+        }
+
+        // Jika ada payload evaluation baru, sinkronkan ke local overrides
+        if (payload.evaluation) {
+          const safeEval = sanitizeMemberIdentity(payload.evaluation);
+          const rawOv = localStorage.getItem('simak_evaluations_overrides');
+          const ov = rawOv ? JSON.parse(rawOv) : {};
+          if (safeEval.user_id) ov[safeEval.user_id] = safeEval;
+          if (safeEval.npm || safeEval.nim) ov[safeEval.npm || safeEval.nim] = safeEval;
+          localStorage.setItem('simak_evaluations_overrides', JSON.stringify(ov));
+
+          if (safeEval.user_id) localStorage.setItem(`simak_eval_${safeEval.user_id}`, JSON.stringify(safeEval));
+          if (safeEval.npm || safeEval.nim) localStorage.setItem(`simak_eval_${safeEval.npm || safeEval.nim}`, JSON.stringify(safeEval));
+
+          const rawLb = localStorage.getItem('simak_leaderboard_cache');
+          if (rawLb) {
+            let lbList = JSON.parse(rawLb);
+            const idx = lbList.findIndex(
+              (m: any) =>
+                (safeEval.user_id && m.user_id === safeEval.user_id) ||
+                ((safeEval.npm || safeEval.nim) && normalizeStudentId(m.npm || m.nim) === normalizeStudentId(safeEval.npm || safeEval.nim))
+            );
+            if (idx >= 0) {
+              lbList[idx] = { ...lbList[idx], ...safeEval };
+              lbList.sort((a: any, b: any) => (b.total_points || 0) - (a.total_points || 0));
+              localStorage.setItem('simak_leaderboard_cache', JSON.stringify(lbList));
+            }
+          }
+        }
+      } catch {}
+
       try {
         window.dispatchEvent(
           new CustomEvent('simak_attendance_deleted', {
-            detail: { id: payload.attendanceId, eventId: payload.eventId },
+            detail: {
+              id: payload.attendanceId,
+              eventId: payload.eventId,
+              userId: payload.userId,
+              npm: payload.npm,
+              evaluation: payload.evaluation,
+            },
           })
         );
       } catch {}
 
       for (const h of registeredHandlers) {
         try {
-          h.onAttendanceDeleted?.(payload.attendanceId, payload.eventId);
+          h.onAttendanceDeleted?.(payload.attendanceId, payload.eventId, payload);
         } catch {}
       }
     }
@@ -717,13 +789,24 @@ export async function broadcastAttendanceRecorded(record: any, evaluation?: any)
 /**
  * Broadcast hapus presensi ke semua perangkat aktif
  */
-export async function broadcastAttendanceDeleted(attendanceId: string, eventId?: string): Promise<void> {
+export async function broadcastAttendanceDeleted(
+  attendanceId: string,
+  eventId?: string,
+  extra?: { userId?: string; npm?: string; deductionPoints?: number; evaluation?: any }
+): Promise<void> {
   const ch = ensureMeshChannel();
   try {
     await ch.send({
       type: 'broadcast',
       event: 'ATTENDANCE_DELETED',
-      payload: { attendanceId, eventId },
+      payload: {
+        attendanceId,
+        eventId,
+        userId: extra?.userId,
+        npm: extra?.npm,
+        deductionPoints: extra?.deductionPoints,
+        evaluation: extra?.evaluation,
+      },
     });
   } catch {}
 }

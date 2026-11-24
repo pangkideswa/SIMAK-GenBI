@@ -5,6 +5,7 @@ import AdminDashboardPage from './pages/AdminDashboardPage';
 import { SuperAdminPage } from './pages/SuperAdminPage';
 import { DocumentVerificationView } from './components/DocumentVerificationView';
 import { SatelliteLoader } from './components/SatelliteLoader';
+import { PwaInstallBanner } from './components/PwaInstallBanner';
 import { supabase } from './lib/supabase';
 import { purgeSuperAdminFromCache, sanitizeMemberIdentity } from './lib/attendanceSync';
 
@@ -188,34 +189,30 @@ export function App() {
     return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
-  // JIKA SUPER ADMIN (HAK AKSES PENUH PENGEMBANG / MASTER DEV)
-  // Panel terpisah khusus developer dengan kontrol penuh sistem
-  if (user.role === 'superadmin') {
-    return <SuperAdminPage onLogout={handleLogout} />;
-  }
-
-  // Jika admin -> arahkan ke AdminDashboardPage atau tampilan Anggota jika sedang di-switch
-  if (user.role === 'admin') {
-    if (adminViewMode === 'member') {
-      return (
-        <DashboardPage
-          user={user}
-          onLogout={handleLogout}
-          onSwitchToAdminView={() => setAdminViewMode('admin')}
-        />
-      );
-    }
-    return (
-      <AdminDashboardPage
-        user={user}
-        onLogout={handleLogout}
-        onSwitchToMemberView={() => setAdminViewMode('member')}
-      />
-    );
-  }
-
-  // Jika member atau kadiv -> Dashboard Anggota
-  return <DashboardPage user={user} onLogout={handleLogout} />;
+  return (
+    <>
+      {user.role === 'superadmin' ? (
+        <SuperAdminPage onLogout={handleLogout} />
+      ) : user.role === 'admin' ? (
+        adminViewMode === 'member' ? (
+          <DashboardPage
+            user={user}
+            onLogout={handleLogout}
+            onSwitchToAdminView={() => setAdminViewMode('admin')}
+          />
+        ) : (
+          <AdminDashboardPage
+            user={user}
+            onLogout={handleLogout}
+            onSwitchToMemberView={() => setAdminViewMode('member')}
+          />
+        )
+      ) : (
+        <DashboardPage user={user} onLogout={handleLogout} />
+      )}
+      <PwaInstallBanner />
+    </>
+  );
 }
 
 export default App;

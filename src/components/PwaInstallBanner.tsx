@@ -7,22 +7,39 @@ interface PwaInstallBannerProps {
 }
 
 export const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ className = '' }) => {
-  const [isDismissed, setIsDismissed] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const [isDismissed, setIsDismissed] = useState(() => {
+    try {
+      return sessionStorage.getItem('simak_pwa_banner_dismissed') === 'true' ||
+             localStorage.getItem('simak_pwa_installed') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [isInstalled, setIsInstalled] = useState(false);
   const [isInstalling, setIsInstalling] = useState(false);
   const [showIosTip, setShowIosTip] = useState(false);
+  const [showAndroidTip, setShowAndroidTip] = useState(false);
 
   useEffect(() => {
     // Jika sudah diinstal dan dibuka di mode aplikasi standalone, tidak perlu tampilkan
-    if (isRunningStandalone()) {
+    if (isRunningStandalone() || isDismissed) {
       return;
     }
+
+    // Berikan delay 3.5 detik agar pengalaman membuka halaman awal terasa tenang dan tidak diserbu popup
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, 3500);
 
     // Dengarkan event native 'beforeinstallprompt' dari browser
     const unsubscribe = subscribeInstallPrompt(() => {});
 
-    return () => unsubscribe();
-  }, []);
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [isDismissed]);
 
   const handleInstallClick = async () => {
     setIsInstalling(true);
@@ -31,27 +48,33 @@ export const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ className = 
 
     if (result.outcome === 'accepted') {
       setIsInstalled(true);
+      try {
+        localStorage.setItem('simak_pwa_installed', 'true');
+      } catch {}
       setTimeout(() => setIsDismissed(true), 2000);
     } else if (result.outcome === 'dismissed') {
       // User membatalkan dialog browser
-      setIsDismissed(true);
+      handleDismiss();
     } else {
-      // Perangkat iOS atau browser yang belum menembak deferredPrompt
+      // Browser belum menembak deferredPrompt (misal di iOS atau insecure context HTTP LAN)
       const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
       if (isIos) {
         setShowIosTip(true);
       } else {
-        setIsDismissed(true);
+        setShowAndroidTip(true);
       }
     }
   };
 
   const handleDismiss = () => {
     setIsDismissed(true);
+    try {
+      sessionStorage.setItem('simak_pwa_banner_dismissed', 'true');
+    } catch {}
   };
 
-  // Jangan tampilkan jika sudah di-dismiss atau sudah dalam mode standalone
-  if (isDismissed || isRunningStandalone()) {
+  // Jangan tampilkan jika belum waktunya (delay), sudah di-dismiss dalam sesi ini, atau sudah mode standalone
+  if (!isVisible || isDismissed || isRunningStandalone()) {
     return null;
   }
 
@@ -99,6 +122,20 @@ export const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ className = 
         {showIosTip && (
           <div className="mt-3 p-2.5 rounded-xl bg-blue-900/40 border border-blue-500/30 text-[11px] text-blue-200 leading-relaxed">
             Di iPhone/iPad: Ketuk ikon <strong>Bagikan (Share)</strong> lalu pilih <strong>&quot;Tambah ke Layar Utama&quot;</strong>.
+          </div>
+        )}
+
+        {showAndroidTip && (
+          <div className="mt-3 p-3 rounded-2xl bg-amber-950/60 border border-amber-500/40 text-[11px] text-amber-200 leading-relaxed space-y-1.5 animate-in fade-in duration-200">
+            <p className="font-bold text-amber-100 flex items-center gap-1.5">
+              <span>⚠️</span> Chrome Memerlukan Akses HTTPS Aman
+            </p>
+            <p>
+              Google Chrome memblokir tombol instal WebAPK jika web dibuka menggunakan IP lokal <code>http://192.168...</code> (ada tanda silang merah di browser).
+            </p>
+            <p className="text-[10px] text-slate-300">
+              👉 Pastikan akses menggunakan domain HTTPS (seperti <code>https://onegenbi.site</code>) atau ketuk menu titik tiga ⋮ Chrome lalu pilih <strong>&quot;Tambahkan ke Layar Utama&quot;</strong>.
+            </p>
           </div>
         )}
 

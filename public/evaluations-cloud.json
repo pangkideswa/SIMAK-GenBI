@@ -1,5 +1,25 @@
 [
   {
+    "user_id": "c3333333-3333-3333-3333-333333333333",
+    "npm": "2214100048",
+    "nim": "2214100048",
+    "email": "fahmi@genbi-unma.ac.id",
+    "full_name": "Muhamad Fahmi",
+    "division": "Publikasi dan Sosialisasi",
+    "role": "member",
+    "avatar_url": null,
+    "total_points": 90,
+    "total_hadir": 6,
+    "total_izin": 0,
+    "total_alfa": 0,
+    "attendance_percentage": 86,
+    "predicate": "Sangat Aktif",
+    "fullName": "Muhamad Fahmi",
+    "name": "Muhamad Fahmi",
+    "member_name": "Muhamad Fahmi",
+    "memberFullName": "Muhamad Fahmi"
+  },
+  {
     "user_id": "b2222222-2222-2222-2222-222222222222",
     "npm": "2214100010",
     "nim": "2214100010",
@@ -14,22 +34,6 @@
     "total_alfa": 0,
     "attendance_percentage": 85.7,
     "predicate": "Sangat Aktif"
-  },
-  {
-    "user_id": "c3333333-3333-3333-3333-333333333333",
-    "npm": "2214100048",
-    "nim": "2214100048",
-    "email": "anisa@genbi-unma.ac.id",
-    "full_name": "Anisa Permata",
-    "division": "Publikasi dan Sosialisasi",
-    "role": "member",
-    "avatar_url": null,
-    "total_points": 75,
-    "total_hadir": 5,
-    "total_izin": 2,
-    "total_alfa": 0,
-    "attendance_percentage": 71.4,
-    "predicate": "Aktif"
   },
   {
     "user_id": "sample-3",

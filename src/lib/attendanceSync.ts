@@ -242,38 +242,20 @@ export function purgeSuperAdminFromCache(): void {
 
     // 5. Normalisasi data nama 2214100048 jika di cache browser masih tersimpan nama lama
     try {
-      const fahmiNpm = '2214100048';
-      let resolvedName = 'Muhamad Fahmi';
-      const rawWl = localStorage.getItem('simak_whitelist_overrides');
-      if (rawWl) {
-        const wl = JSON.parse(rawWl);
-        if (wl[fahmiNpm]?.full_name) resolvedName = wl[fahmiNpm].full_name;
-      }
-
-      // Bersihkan leaderboard cache
-      const rawLb = localStorage.getItem('simak_leaderboard_cache');
-      if (rawLb) {
-        const lb = JSON.parse(rawLb);
-        if (Array.isArray(lb)) {
-          let lbChanged = false;
-          const updatedLb = lb.map((m: any) => {
-            if ((m.npm === fahmiNpm || m.nim === fahmiNpm) && (m.full_name?.toLowerCase().includes('anisa') || !m.full_name)) {
-              lbChanged = true;
-              return { ...m, full_name: resolvedName };
+      // Bersihkan seluruh penyimpanan lokal jika ada nama Anisa Permata
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('simak_') || key.includes('user') || key.includes('eval') || key.includes('attend'))) {
+          try {
+            const rawVal = localStorage.getItem(key);
+            if (rawVal && (rawVal.toLowerCase().includes('anisa') || rawVal.includes('2214100048'))) {
+              const replaced = rawVal
+                .replace(/anisa permata/gi, 'Muhamad Fahmi')
+                .replace(/anisa/gi, 'Muhamad Fahmi')
+                .replace(/anisa@genbi-unma\.ac\.id/gi, 'fahmi@genbi-unma.ac.id');
+              localStorage.setItem(key, replaced);
             }
-            return m;
-          });
-          if (lbChanged) localStorage.setItem('simak_leaderboard_cache', JSON.stringify(updatedLb));
-        }
-      }
-
-      // Bersihkan evaluations overrides
-      const rawEv = localStorage.getItem(EVALUATIONS_OVERRIDES_KEY);
-      if (rawEv) {
-        const ev = JSON.parse(rawEv);
-        if (ev[fahmiNpm] && (ev[fahmiNpm].full_name?.toLowerCase().includes('anisa') || !ev[fahmiNpm].full_name)) {
-          ev[fahmiNpm].full_name = resolvedName;
-          localStorage.setItem(EVALUATIONS_OVERRIDES_KEY, JSON.stringify(ev));
+          } catch {}
         }
       }
     } catch {}
@@ -793,12 +775,23 @@ export function isEventAttendedByUser(
   userNpm?: string
 ): boolean {
   const cleanNpm = normalizeStudentId(userNpm);
+
+  // Ambil daftar blacklist ID presensi yang telah dihapus
+  let deletedSet = new Set<string>();
+  try {
+    const rawDel = localStorage.getItem('simak_deleted_attendances');
+    if (rawDel) {
+      deletedSet = new Set(JSON.parse(rawDel));
+    }
+  } catch {}
+
   try {
     const rawAll = localStorage.getItem(ALL_ATTENDANCES_KEY);
     if (rawAll) {
       const all: any[] = JSON.parse(rawAll);
       const found = all.some(
         (a) =>
+          !deletedSet.has(a.id) &&
           a.event_id === eventId &&
           (a.user_id === userId || (cleanNpm && normalizeStudentId(a.npm || a.nim) === cleanNpm)) &&
           a.status === 'hadir'
@@ -812,11 +805,24 @@ export function isEventAttendedByUser(
     if (rawPersonal) {
       const personal: any[] = JSON.parse(rawPersonal);
       const found = personal.some(
-        (a) => a.event_id === eventId && a.status === 'hadir'
+        (a) => !deletedSet.has(a.id) && a.event_id === eventId && a.status === 'hadir'
       );
       if (found) return true;
     }
   } catch {}
+
+  if (cleanNpm && cleanNpm !== userId) {
+    try {
+      const rawPersonalNpm = localStorage.getItem(`simak_attendances_${cleanNpm}`);
+      if (rawPersonalNpm) {
+        const personal: any[] = JSON.parse(rawPersonalNpm);
+        const found = personal.some(
+          (a) => !deletedSet.has(a.id) && a.event_id === eventId && a.status === 'hadir'
+        );
+        if (found) return true;
+      }
+    } catch {}
+  }
 
   return false;
 }

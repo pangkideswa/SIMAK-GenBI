@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { Event as EventType } from '../types/database';
+import { normalizeStudentId } from './memberSync';
 import {
   broadcastEventMutated,
   broadcastEventDeleted,
@@ -161,7 +162,15 @@ export async function deleteEventPermanently(eventId: string): Promise<boolean> 
  * HAPUS PRESENSI PESERTA (Perbaikan Bug "Sukses tapi Data Masih Ada")
  * Menghapus dari Supabase, daftar blacklist lokal, simak_all_attendances, dan sesi user.
  */
-export async function deleteAttendanceRecord(attendanceId: string, eventId?: string): Promise<boolean> {
+export async function deleteAttendanceRecord(
+  attendanceId: string,
+  eventId?: string,
+  memberInfo?: { userId?: string; npm?: string; points?: number }
+): Promise<boolean> {
+  const targetUserId = memberInfo?.userId;
+  const targetNpm = normalizeStudentId(memberInfo?.npm);
+  const deductionPoints = Number(memberInfo?.points || 0);
+
   // 1. Masukkan ke Blacklist Hapus agar tidak pernah muncul lagi saat load/fetch
   try {
     const rawDel = localStorage.getItem(DELETED_ATTENDANCES_KEY);
@@ -177,7 +186,13 @@ export async function deleteAttendanceRecord(attendanceId: string, eventId?: str
     const rawAll = localStorage.getItem(ALL_ATTENDANCES_KEY);
     if (rawAll) {
       const allList = JSON.parse(rawAll);
-      const filtered = allList.filter((item: any) => item.id !== attendanceId);
+      const filtered = allList.filter(
+        (item: any) =>
+          item.id !== attendanceId &&
+          !(eventId && (item.event_id === eventId || item.eventId === eventId) &&
+            ((targetUserId && item.user_id === targetUserId) ||
+             (targetNpm && normalizeStudentId(item.npm || item.nim) === targetNpm)))
+      );
       localStorage.setItem(ALL_ATTENDANCES_KEY, JSON.stringify(filtered));
     }
   } catch {}
@@ -190,24 +205,99 @@ export async function deleteAttendanceRecord(attendanceId: string, eventId?: str
         const rawUserAtt = localStorage.getItem(key);
         if (rawUserAtt) {
           const userAttList = JSON.parse(rawUserAtt);
-          const filtered = userAttList.filter((item: any) => item.id !== attendanceId && item.event_id !== eventId);
+          const filtered = userAttList.filter(
+            (item: any) =>
+              item.id !== attendanceId &&
+              !(eventId && (item.event_id === eventId || item.eventId === eventId))
+          );
           localStorage.setItem(key, JSON.stringify(filtered));
         }
       }
     }
   } catch {}
 
-  // 4. Broadcast Event Hapus ke seluruh komponen React & P2P Mesh
+  // 4. Update dan kurangi evaluasi poin serta total_hadir anggota
+  let updatedEval: any = null;
+  try {
+    const rawOv = localStorage.getItem('simak_evaluations_overrides');
+    const ovMap = rawOv ? JSON.parse(rawOv) : {};
+
+    const findKey = targetNpm || targetUserId;
+    let currentEval = findKey ? ovMap[findKey] : null;
+    if (!currentEval && targetUserId) {
+      const rawUser = localStorage.getItem(`simak_eval_${targetUserId}`);
+      if (rawUser) currentEval = JSON.parse(rawUser);
+    }
+    if (!currentEval && targetNpm) {
+      const rawNpm = localStorage.getItem(`simak_eval_${targetNpm}`);
+      if (rawNpm) currentEval = JSON.parse(rawNpm);
+    }
+
+    if (currentEval) {
+      const nextPts = Math.max(0, (currentEval.total_points || 0) - (deductionPoints > 0 ? deductionPoints : 10));
+      const nextHadir = Math.max(0, (currentEval.total_hadir || 1) - 1);
+      const nextPredicate = nextPts >= 80 ? 'Sangat Aktif' : nextPts >= 60 ? 'Aktif' : 'Perlu Pembinaan';
+
+      updatedEval = {
+        ...currentEval,
+        total_points: nextPts,
+        total_hadir: nextHadir,
+        predicate: nextPredicate,
+      };
+
+      if (targetUserId) {
+        ovMap[targetUserId] = updatedEval;
+        localStorage.setItem(`simak_eval_${targetUserId}`, JSON.stringify(updatedEval));
+      }
+      if (targetNpm) {
+        ovMap[targetNpm] = updatedEval;
+        localStorage.setItem(`simak_eval_${targetNpm}`, JSON.stringify(updatedEval));
+      }
+      localStorage.setItem('simak_evaluations_overrides', JSON.stringify(ovMap));
+
+      // Update cache leaderboard
+      const rawLb = localStorage.getItem('simak_leaderboard_cache');
+      if (rawLb) {
+        let lbList = JSON.parse(rawLb);
+        const idx = lbList.findIndex(
+          (m: any) =>
+            (targetUserId && m.user_id === targetUserId) ||
+            (targetNpm && normalizeStudentId(m.npm || m.nim) === targetNpm)
+        );
+        if (idx >= 0) {
+          lbList[idx] = { ...lbList[idx], ...updatedEval };
+          lbList.sort((a: any, b: any) => (b.total_points || 0) - (a.total_points || 0));
+          localStorage.setItem('simak_leaderboard_cache', JSON.stringify(lbList));
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Gagal memperbarui evaluasi lokal saat hapus presensi:', err);
+  }
+
+  // 5. Broadcast Event Hapus ke seluruh komponen React & P2P Mesh Realtime
   try {
     window.dispatchEvent(
       new CustomEvent('simak_attendance_deleted', {
-        detail: { id: attendanceId, eventId },
+        detail: {
+          id: attendanceId,
+          eventId,
+          userId: targetUserId,
+          npm: targetNpm,
+          deductionPoints,
+          evaluation: updatedEval,
+        },
       })
     );
-    broadcastAttendanceDeleted(attendanceId, eventId);
+    broadcastAttendanceDeleted(attendanceId, eventId, {
+      userId: targetUserId,
+      npm: targetNpm,
+      deductionPoints,
+      evaluation: updatedEval,
+    });
   } catch {}
 
-  // 5. Eksekusi Hapus di Database Supabase
+  // 6. Eksekusi Hapus di Database Supabase
   try {
     const { error } = await supabase.from('attendances').delete().eq('id', attendanceId);
     if (error) {

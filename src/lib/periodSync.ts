@@ -15,7 +15,7 @@ const PERIODS_STORAGE_KEY = 'simak_academic_periods';
 export const DEFAULT_PERIODS: AcademicPeriod[] = [
   {
     id: 'p-2026-ganjil',
-    name: 'T.A. 2026/2027 Ganjil',
+    name: '2026/2027 Ganjil',
     academicYear: '2026/2027',
     semester: 'Ganjil',
     isActive: true,
@@ -24,7 +24,7 @@ export const DEFAULT_PERIODS: AcademicPeriod[] = [
   },
   {
     id: 'p-2026-genap',
-    name: 'T.A. 2026/2027 Genap',
+    name: '2026/2027 Genap',
     academicYear: '2026/2027',
     semester: 'Genap',
     isActive: false,
@@ -33,7 +33,7 @@ export const DEFAULT_PERIODS: AcademicPeriod[] = [
   },
   {
     id: 'p-2027-ganjil',
-    name: 'T.A. 2027/2028 Ganjil',
+    name: '2027/2028 Ganjil',
     academicYear: '2027/2028',
     semester: 'Ganjil',
     isActive: false,
@@ -54,13 +54,18 @@ export function getAcademicPeriods(): AcademicPeriod[] {
         let changed = false;
         const normalized = parsed.map((p) => {
           let label = p.statusLabel;
+          let name = String(p.name || '').replace(/^T\.A\.\s*/i, '').trim();
           // Normalisasi label kaku usang 'Arsip Demisioner' atau label kosong menjadi 'Masa yang akan datang'
           if (!label || label === 'Arsip Demisioner') {
             label = p.isActive ? 'Periode Aktif' : 'Masa yang akan datang';
             changed = true;
           }
+          if (name !== p.name) {
+            changed = true;
+          }
           return {
             ...p,
+            name: name || p.name,
             statusLabel: label,
           };
         });
@@ -72,6 +77,15 @@ export function getAcademicPeriods(): AcademicPeriod[] {
     }
   } catch {}
   return DEFAULT_PERIODS;
+}
+
+/**
+ * Mengambil periode yang sedang aktif
+ */
+export function getActivePeriod(): AcademicPeriod {
+  const periods = getAcademicPeriods();
+  const active = periods.find((p) => p.isActive);
+  return active || periods[0] || DEFAULT_PERIODS[0];
 }
 
 /**

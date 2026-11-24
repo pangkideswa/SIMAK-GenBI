@@ -4,7 +4,6 @@ import {
   ScanLine,
   FileText,
   Award,
-  Calendar,
   Clock,
   MapPin,
   CheckCircle2,
@@ -16,7 +15,6 @@ import {
   AlertCircle,
   CalendarDays,
   ShieldAlert,
-  History,
   CheckCircle,
   Hourglass,
   CalendarX,
@@ -83,6 +81,7 @@ import {
   flushOfflineQueue,
 } from '../lib/offlineQueue';
 import { getPointSettings } from '../lib/pointSettings';
+import { getActivePeriod, AcademicPeriod } from '../lib/periodSync';
 import type { Event as EventType, MemberEvaluation, EvaluationPredicate, Role } from '../types/database';
 
 interface DashboardPageProps {
@@ -417,9 +416,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [leaderboardSortOrder, setLeaderboardSortOrder] = useState<'highest' | 'lowest'>('highest');
   const [awardsState, setAwardsState] = useState(() => getMubesAwardsState());
   const [pointSettings, setPointSettings] = useState(() => getPointSettings());
+  const [currentPeriod, setCurrentPeriod] = useState<AcademicPeriod>(() => getActivePeriod());
   const [leaderboardPublish, setLeaderboardPublish] = useState<LeaderboardPublishState>(() =>
     getLeaderboardPublishState()
   );
+
+  useEffect(() => {
+    const handleSyncPeriod = () => {
+      setCurrentPeriod(getActivePeriod());
+    };
+    window.addEventListener('simak_period_sync', handleSyncPeriod);
+    window.addEventListener('storage', handleSyncPeriod);
+    return () => {
+      window.removeEventListener('simak_period_sync', handleSyncPeriod);
+      window.removeEventListener('storage', handleSyncPeriod);
+    };
+  }, []);
 
   useEffect(() => {
     const handleSyncLeaderboardPublish = (e?: any) => {
@@ -1187,15 +1199,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           predicate: ev.predicate || 'Anggota Baru',
         };
 
-        if (
-          localOverride &&
-          (localOverride.total_points > loadedEval.total_points ||
-            localOverride.total_hadir > loadedEval.total_hadir)
-        ) {
+        if (localOverride) {
           loadedEval = {
             ...loadedEval,
-            total_points: localOverride.total_points,
-            total_hadir: localOverride.total_hadir,
+            total_points: localOverride.total_points ?? loadedEval.total_points,
+            total_hadir: localOverride.total_hadir ?? loadedEval.total_hadir,
             attendance_percentage:
               localOverride.attendance_percentage ?? loadedEval.attendance_percentage,
             predicate: localOverride.predicate || loadedEval.predicate,
@@ -1471,11 +1479,68 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     };
 
     const handleAttDeleted = (e: any) => {
-      const delId = e?.detail?.id;
-      if (!delId) return;
-      setAttendances((prev) => prev.filter((a) => a.id !== delId));
-      fetchEvaluation();
+      const detail = e?.detail;
+      const delId = typeof detail === 'string' ? detail : detail?.id;
+      const targetEventId = detail?.eventId;
+      const targetUserId = detail?.userId;
+      const targetNpm = detail?.npm ? normalizeStudentId(detail.npm) : null;
+      const myCleanNpm = normalizeStudentId(user.npm || user.nim || profile.npm);
+
+      // Cek apakah presensi yang dihapus milik user yang sedang aktif
+      const isMyAttendance =
+        (delId && attendances.some((a) => a.id === delId)) ||
+        (targetEventId &&
+          ((targetUserId && targetUserId === user.id) ||
+           (targetNpm && targetNpm === myCleanNpm)));
+
+      // 1. Bersihkan dari state presensi anggota aktif
+      setAttendances((prev) =>
+        prev.filter((a) => {
+          if (delId && a.id === delId) return false;
+          if (targetEventId && a.event_id === targetEventId && isMyAttendance) return false;
+          return true;
+        })
+      );
+
+      // 2. Bersihkan dari local storage sesi anggota
+      try {
+        const rawLocal = localStorage.getItem('simak_attendances_' + user.id);
+        if (rawLocal) {
+          const list = JSON.parse(rawLocal);
+          const filtered = list.filter((a: any) => {
+            if (delId && a.id === delId) return false;
+            if (targetEventId && a.event_id === targetEventId && isMyAttendance) return false;
+            return true;
+          });
+          localStorage.setItem('simak_attendances_' + user.id, JSON.stringify(filtered));
+        }
+        if (myCleanNpm) {
+          const rawLocalNpm = localStorage.getItem('simak_attendances_' + myCleanNpm);
+          if (rawLocalNpm) {
+            const list = JSON.parse(rawLocalNpm);
+            const filtered = list.filter((a: any) => {
+              if (delId && a.id === delId) return false;
+              if (targetEventId && a.event_id === targetEventId && isMyAttendance) return false;
+              return true;
+            });
+            localStorage.setItem('simak_attendances_' + myCleanNpm, JSON.stringify(filtered));
+          }
+        }
+      } catch {}
+
+      // 3. Jika evaluasi baru disertakan, langsung perbarui state evaluasi user jika cocok
+      if (detail?.evaluation && isMyAttendance) {
+        const safeEval = sanitizeMemberIdentity(detail.evaluation);
+        setEvaluation(safeEval);
+        try {
+          localStorage.setItem('simak_eval_' + user.id, JSON.stringify(safeEval));
+        } catch {}
+      } else {
+        fetchEvaluation();
+      }
+
       fetchLeaderboard();
+      fetchAttendances();
     };
 
     const handleAttVerified = (e: any) => {
@@ -1532,8 +1597,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       onAttendanceMutated: () => {
         handleAttSubmittedOrSynced();
       },
-      onAttendanceDeleted: (attId) => {
-        handleAttDeleted({ detail: { id: attId } });
+      onAttendanceDeleted: (attId, evId, extra) => {
+        handleAttDeleted({
+          detail: {
+            id: attId,
+            eventId: evId,
+            userId: extra?.userId,
+            npm: extra?.npm,
+            evaluation: extra?.evaluation,
+          },
+        });
       },
     });
 
@@ -2639,9 +2712,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               </h2>
             </div>
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-white/90 border border-slate-200 shadow-xs text-slate-700">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white/90 border border-slate-200 shadow-xs text-slate-700">
                 <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
-                <span>Semester Genap 2026/2027</span>
+                <span>{currentPeriod.name.startsWith('Semester') ? currentPeriod.name : `Semester ${currentPeriod.semester} ${currentPeriod.academicYear}`}</span>
               </span>
             </div>
           </div>
@@ -3120,28 +3193,26 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   </div>
                 )}
 
-                <div className="flex p-1 bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xs overflow-x-auto no-scrollbar">
+                <div className="flex p-1 bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xs overflow-x-auto no-scrollbar gap-1 touch-pan-x scroll-smooth">
                   <button
                     onClick={() => setActiveTab('events')}
-                    className={`flex-1 min-w-[100px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    className={`flex-1 min-w-[90px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center transition cursor-pointer ${
                       activeTab === 'events'
                         ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <Calendar className="w-3.5 h-3.5" />
                     <span>Agenda ({events.length})</span>
                   </button>
 
                   <button
                     onClick={() => setActiveTab('history')}
-                    className={`flex-1 min-w-[100px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    className={`flex-1 min-w-[90px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center transition cursor-pointer ${
                       activeTab === 'history'
                         ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <History className="w-3.5 h-3.5" />
                     <span>Riwayat ({attendances.length})</span>
                   </button>
 
@@ -3150,16 +3221,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       setActiveTab('leaderboard');
                       fetchLeaderboard();
                     }}
-                    className={`flex-1 min-w-[110px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    className={`flex-1 min-w-[105px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1 transition cursor-pointer ${
                       activeTab === 'leaderboard'
                         ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <Trophy className="w-3.5 h-3.5 text-amber-300" />
                     <span>Leaderboard</span>
                     {profile.role === 'member' && !leaderboardPublish.isPublished && (
-                      <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                      <span className="text-[10px] text-amber-500 font-black">🔒</span>
                     )}
                   </button>
 
@@ -3168,13 +3238,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       setActiveTab('mubes-awards');
                       fetchMubesAwardsCloud();
                     }}
-                    className={`flex-1 min-w-[125px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer relative ${
+                    className={`flex-1 min-w-[115px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1 transition cursor-pointer relative ${
                       activeTab === 'mubes-awards'
                         ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-500/20'
                         : 'text-amber-800 bg-amber-50 hover:bg-amber-100'
                     }`}
                   >
-                    <Trophy className="w-3.5 h-3.5 text-amber-500" />
                     <span>Reward Mubes</span>
                     {awardsState.isPublished && (
                       <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping ml-0.5" />
@@ -3183,13 +3252,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
                   <button
                     onClick={() => setActiveTab('tiers')}
-                    className={`flex-1 min-w-[90px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    className={`flex-1 min-w-[85px] py-2 rounded-xl text-xs font-extrabold flex items-center justify-center transition cursor-pointer ${
                       activeTab === 'tiers'
                         ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <Info className="w-3.5 h-3.5" />
                     <span>Panduan</span>
                   </button>
                 </div>
@@ -3476,15 +3544,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                   ? `Klasemen Keaktifan Divisi ${kadivDivision}`
                                   : 'Peringkat Keaktifan GenBI UNMA'}
                               </h4>
-                              {isKadiv && (
-                                <span className="px-2 py-0.5 rounded-full bg-amber-400/30 text-amber-900 text-[10px] font-black border border-amber-400/40">
-                                  Akses Khusus Kadiv
-                                </span>
-                              )}
                             </div>
                             <p className="text-[11px] text-slate-500">
                               {isKadiv
-                                ? `Monitoring internal kehadiran & evaluasi poin khusus anggota divisi ${kadivDivision}`
+                                ? `Monitoring internal kehadiran & evaluasi poin divisi ${kadivDivision}`
                                 : 'Evaluasi real-time penilaian keaktifan untuk monitoring BPH'}
                             </p>
                           </div>
@@ -3672,13 +3735,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
                         {/* Pill Pilihan Divisi: Terkunci untuk Kadiv, Terbuka untuk BPH/Anggota yang terbit */}
                         {isKadiv ? (
-                          <div className="flex items-center gap-2 pt-0.5 text-[11px]">
-                            <span className="px-2.5 py-1 rounded-xl font-bold bg-amber-500 text-slate-950 flex items-center gap-1.5 shadow-xs">
-                              <Briefcase className="w-3 h-3 text-slate-950" />
-                              <span>Divisi {kadivDivision} (Khusus Pemantauan Anda)</span>
-                            </span>
-                            <span className="text-[10px] text-slate-400 italic">
-                              *Akses kadiv dibatasi hanya pada divisinya sendiri
+                          <div className="flex items-center text-[11px] pt-0.5">
+                            <span className="px-2.5 py-1 rounded-xl font-bold bg-amber-500 text-slate-950 inline-flex items-center gap-1.5 shadow-xs">
+                              <Briefcase className="w-3 h-3 text-slate-950 shrink-0" />
+                              <span>Divisi {kadivDivision}</span>
                             </span>
                           </div>
                         ) : (
@@ -4069,12 +4129,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   {isCameraActive && !cameraError && (
                     <>
                       {/* Top Overlay Bar */}
-                      <div className="absolute top-3 inset-x-3 flex items-center justify-between z-10 pointer-events-none">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/75 backdrop-blur-md text-emerald-400 text-[10px] font-black tracking-wider border border-emerald-500/30 shadow-xs pointer-events-auto">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                          SCANNER AKTIF
-                        </span>
-
+                      <div className="absolute top-3 inset-x-3 flex items-center justify-end z-10 pointer-events-none">
                         <div className="flex items-center gap-1.5 pointer-events-auto">
                           {/* Tombol Toggle Senter / Torch */}
                           <button

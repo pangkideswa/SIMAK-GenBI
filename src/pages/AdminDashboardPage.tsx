@@ -4,7 +4,6 @@ import {
   Calendar,
   Plus,
   QrCode,
-  FileCheck2,
   Users,
   Download,
   CheckCircle,
@@ -67,7 +66,7 @@ import {
   filterDeletedEvents,
   toggleEventLock,
 } from '../lib/eventSync';
-import { fetchEventsCloud, fetchEvaluationsCloud, initMeshSync } from '../lib/meshSync';
+import { fetchEventsCloud, fetchEvaluationsCloud, saveEvaluationCloud, initMeshSync } from '../lib/meshSync';
 import { getAcademicPeriods, AcademicPeriod } from '../lib/periodSync';
 import { Footer } from '../components/Footer';
 import {
@@ -84,7 +83,7 @@ import {
   isSuperAdminAccount,
   purgeSuperAdminFromCache,
 } from '../lib/attendanceSync';
-import type { Event as EventType, MemberEvaluation, EventCategory, Division, Role } from '../types/database';
+import type { Event as EventType, MemberEvaluation, EventCategory, Division, Role, EvaluationPredicate } from '../types/database';
 
 interface AdminDashboardPageProps {
   user: {
@@ -366,7 +365,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [academicPeriods, setAcademicPeriods] = useState<AcademicPeriod[]>(initialPeriods);
   const activePeriodObj = initialPeriods.find((p) => p.isActive) || initialPeriods[0];
   const [selectedSemester, setSelectedSemester] = useState<string>(
-    activePeriodObj ? activePeriodObj.name : 'T.A. 2026/2027 Ganjil'
+    activePeriodObj ? activePeriodObj.name : '2026/2027 Ganjil'
   );
 
   // Status Kehadiran Mandiri BPH
@@ -1739,29 +1738,56 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     if (!confirm(`Hapus riwayat presensi untuk "${memberName}" pada agenda ini?`)) return;
 
     try {
-      // 1. Jalankan fungsi hapus terpadu (Supabase, blacklist lokal, cache all_attendances & user sessions)
-      await deleteAttendanceRecord(attendanceId, selectedEventForParticipants?.id);
+      const matchedParticipant = participants.find((p) => p.id === attendanceId);
+      const eventPoints = selectedEventForParticipants?.points || 10;
+      const targetUserId = matchedParticipant?.user_id;
+      const targetNpm = matchedParticipant?.npm || matchedParticipant?.nim;
+
+      // 1. Jalankan fungsi hapus terpadu (Supabase, blacklist lokal, cache all_attendances, user sessions & sinkronisasi mesh realtime)
+      await deleteAttendanceRecord(attendanceId, selectedEventForParticipants?.id, {
+        userId: targetUserId,
+        npm: targetNpm,
+        points: eventPoints,
+      });
 
       // 2. Perbarui state peserta saat ini
       setParticipants((prev) => prev.filter((p) => p.id !== attendanceId));
 
       // 3. Kurangi poin peserta di tabel evaluasi secara instan
-      const eventPoints = selectedEventForParticipants?.points || 10;
+      let updatedTargetEval: MemberEvaluation | null = null;
       setEvaluations((prev) =>
         prev.map((ev) => {
-          const matched = participants.find((p) => p.id === attendanceId);
-          if (matched && (ev.npm === matched.npm || ev.nim === matched.npm)) {
+          if (
+            (targetNpm && (ev.npm === targetNpm || ev.nim === targetNpm)) ||
+            (targetUserId && ev.user_id === targetUserId)
+          ) {
             const nextPts = Math.max(0, (ev.total_points || 0) - eventPoints);
             const nextHadir = Math.max(0, (ev.total_hadir || 1) - 1);
-            return {
+            const nextPredicate: EvaluationPredicate = nextPts >= 80 ? 'Sangat Aktif' : nextPts >= 60 ? 'Aktif' : 'Perlu Pembinaan';
+            const updated: MemberEvaluation = {
               ...ev,
               total_points: nextPts,
               total_hadir: nextHadir,
+              predicate: nextPredicate,
             };
+            updatedTargetEval = updated;
+            return updated;
           }
           return ev;
         })
       );
+
+      // Simpan perubahan ke Cloud evaluations dan local storage overrides
+      if (updatedTargetEval) {
+        saveEvaluationCloud(updatedTargetEval).catch(() => {});
+        try {
+          const rawOv = localStorage.getItem('simak_evaluations_overrides');
+          const ov = rawOv ? JSON.parse(rawOv) : {};
+          if (targetNpm) ov[targetNpm] = updatedTargetEval;
+          if (targetUserId) ov[targetUserId] = updatedTargetEval;
+          localStorage.setItem('simak_evaluations_overrides', JSON.stringify(ov));
+        } catch {}
+      }
 
       showToast(`Presensi untuk ${memberName} berhasil dihapus dari sistem!`, 'info');
       loadAdminData();
@@ -2292,28 +2318,26 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           })()}
 
           {/* Navigation Tab */}
-          <div className="flex p-1 bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xs overflow-x-auto gap-1">
+          <div className="flex p-1 bg-white/90 backdrop-blur-md border border-slate-200/80 rounded-2xl shadow-xs overflow-x-auto no-scrollbar gap-1 touch-pan-x scroll-smooth">
             <button
               onClick={() => setActiveTab('events')}
-              className={`flex-1 min-w-[150px] py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition cursor-pointer ${
+              className={`flex-1 min-w-[130px] py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                 activeTab === 'events'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Calendar className="w-4 h-4" />
               <span>Agenda & Sesi ({events.length})</span>
             </button>
 
             <button
               onClick={() => setActiveTab('verification')}
-              className={`flex-1 min-w-[160px] py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition cursor-pointer ${
+              className={`flex-1 min-w-[140px] py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                 activeTab === 'verification'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <FileCheck2 className="w-4 h-4" />
               <span>Verifikasi & Rekap</span>
               {pendingIzin.length > 0 && (
                 <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black">
@@ -2324,13 +2348,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
             <button
               onClick={() => setActiveTab('leaderboard')}
-              className={`flex-1 min-w-[170px] py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition cursor-pointer ${
+              className={`flex-1 min-w-[150px] py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                 activeTab === 'leaderboard'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Crown className="w-4 h-4 text-amber-400" />
               <span>Leaderboard & Peringkat</span>
             </button>
 
@@ -2339,26 +2362,24 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 setActiveTab('whitelist');
                 loadWhitelistMembers();
               }}
-              className={`flex-1 min-w-[170px] py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition cursor-pointer ${
+              className={`flex-1 min-w-[150px] py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                 activeTab === 'whitelist'
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Users className="w-4 h-4" />
               <span>Whitelist SK Anggota ({whitelistMembers.length})</span>
             </button>
 
             <button
               onClick={() => setActiveTab('mubes-awards')}
-              className={`flex-1 min-w-[170px] py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition cursor-pointer ${
+              className={`flex-1 min-w-[150px] py-2.5 rounded-xl text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
                 activeTab === 'mubes-awards'
                   ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md shadow-amber-500/20'
                   : 'text-amber-800 bg-amber-50 hover:bg-amber-100'
               }`}
             >
-              <Award className="w-4 h-4 text-amber-500" />
-              <span>🏆 Reward Mubes (8 Penghargaan)</span>
+              <span>Reward Mubes</span>
             </button>
           </div>
 
@@ -2860,10 +2881,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-300/30 text-amber-300 text-[11px] font-black uppercase">
-                      <Crown className="w-3.5 h-3.5 fill-amber-400" />
-                      <span>Leaderboard & Evaluasi Poin Resmi</span>
-                    </div>
                     {leaderboardPublish.isPublished ? (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-black">
                         ✓ Terbit ke Anggota
@@ -2929,12 +2946,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               {/* PODIUM SPOTLIGHT TOP 3 ANGGOTA */}
               {evaluations.length >= 3 && (
                 <div className="space-y-3">
-                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Crown className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Podium 3 Besar Keaktifan Terbaik</span>
-                  </h3>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-2">
                     {/* JUARA 2 (PERAK) - Kiri */}
                     {evaluations[1] && (() => {
                       const p1 = sanitizeMemberIdentity(evaluations[1]);

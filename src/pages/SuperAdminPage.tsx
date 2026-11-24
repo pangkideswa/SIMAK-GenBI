@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Users,
-  Calendar,
   Sparkles,
   Database,
   RefreshCw,
@@ -19,11 +17,9 @@ import {
   AlertTriangle,
   Download,
   Upload,
-  CalendarDays,
   Plus,
   Trash2,
   CheckCircle2,
-  ShieldAlert,
   AlertCircle,
   Info,
   Briefcase,
@@ -361,7 +357,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
   const handleSavePeriodSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!periodName.trim()) {
-      showToast('Nama periode wajib diisi (contoh: T.A. 2026/2027 Ganjil)!', 'warning');
+      showToast('Nama periode wajib diisi (contoh: 2026/2027 Ganjil)!', 'warning');
       return;
     }
 
@@ -963,89 +959,83 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         </div>
       </header>
 
-      {/* NAVIGASI 6 TAB UTAMA SUPER ADMIN */}
+      {/* NAVIGASI TAB UTAMA SUPER ADMIN */}
       <div className="bg-slate-900/80 border-b border-slate-800 px-4 sm:px-6 lg:px-8 sticky top-[65px] z-30 backdrop-blur-md">
         <div className="max-w-7xl mx-auto flex items-center gap-1.5 overflow-x-auto py-2.5 no-scrollbar">
           <button
             onClick={() => setActiveTab('users')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center whitespace-nowrap cursor-pointer ${
               activeTab === 'users'
                 ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <Users className={`w-4 h-4 ${activeTab === 'users' ? 'text-amber-300' : 'text-blue-400'}`} />
-            <span>Manajemen Pengguna & Hak Akses ({members.length})</span>
+            <span>Manajemen Pengguna ({members.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('periods')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center whitespace-nowrap cursor-pointer ${
               activeTab === 'periods'
                 ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <CalendarDays className={`w-4 h-4 ${activeTab === 'periods' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Periode Kepengurusan ({periods.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('bph-panel')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center whitespace-nowrap cursor-pointer ${
               activeTab === 'bph-panel'
                 ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <Calendar className={`w-4 h-4 ${activeTab === 'bph-panel' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Panel Operasional BPH</span>
           </button>
 
           <button
             onClick={() => setActiveTab('simulator')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center whitespace-nowrap cursor-pointer ${
               activeTab === 'simulator'
                 ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <Laptop className={`w-4 h-4 ${activeTab === 'simulator' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Simulator Tampilan (Kadiv / Anggota)</span>
           </button>
 
           <button
             onClick={() => setActiveTab('system')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center whitespace-nowrap cursor-pointer ${
               activeTab === 'system'
                 ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <Database className={`w-4 h-4 ${activeTab === 'system' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Kesehatan Sistem & Database</span>
           </button>
 
           <button
             onClick={() => setActiveTab('audit')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center whitespace-nowrap cursor-pointer ${
               activeTab === 'audit'
                 ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-600/30'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <ShieldAlert className={`w-4 h-4 ${activeTab === 'audit' ? 'text-amber-300' : 'text-blue-400'}`} />
             <span>Audit Trail & Log ({auditLogs.length})</span>
           </button>
+
           <button
             onClick={() => setActiveTab('mubes-awards')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-extrabold transition flex items-center justify-center whitespace-nowrap cursor-pointer ${
               activeTab === 'mubes-awards'
                 ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 shadow-md shadow-amber-500/30'
                 : 'text-amber-300 hover:text-white hover:bg-slate-800/60'
             }`}
           >
-            <Crown className={`w-4 h-4 ${activeTab === 'mubes-awards' ? 'text-slate-950' : 'text-amber-400'}`} />
             <span>Reward Mubes (Annual Awards)</span>
           </button>
         </div>
@@ -1916,12 +1906,12 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
             <form onSubmit={handleSavePeriodSubmit} className="space-y-4 text-left">
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-slate-400 uppercase">
-                  Nama Periode (Contoh: T.A. 2026/2027 Ganjil)
+                  Nama Periode (Contoh: 2026/2027 Ganjil)
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="T.A. 2026/2027 Ganjil"
+                  placeholder="2026/2027 Ganjil"
                   value={periodName}
                   onChange={(e) => setPeriodName(e.target.value)}
                   className="w-full px-3.5 py-2 text-xs bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
