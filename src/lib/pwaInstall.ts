@@ -56,6 +56,27 @@ export function subscribeInstallPrompt(callback: (canInstall: boolean) => void):
  */
 export async function triggerPwaInstall(): Promise<{ outcome: 'accepted' | 'dismissed' | 'unsupported' }> {
   if (!deferredPrompt) {
+    // Tunggu hingga 2.5 detik jika event beforeinstallprompt browser masih dalam proses negosiasi
+    await new Promise<void>((resolve) => {
+      let resolved = false;
+      const unsubs = subscribeInstallPrompt((canInstall) => {
+        if (canInstall && !resolved) {
+          resolved = true;
+          unsubs();
+          resolve();
+        }
+      });
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          unsubs();
+          resolve();
+        }
+      }, 2500);
+    });
+  }
+
+  if (!deferredPrompt) {
     return { outcome: 'unsupported' };
   }
 
