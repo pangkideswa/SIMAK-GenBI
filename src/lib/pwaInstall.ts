@@ -18,9 +18,6 @@ if (typeof window !== 'undefined') {
   window.addEventListener('appinstalled', () => {
     deferredPrompt = null;
     listeners.forEach((fn) => fn(false));
-    try {
-      localStorage.setItem('simak_pwa_installed', 'true');
-    } catch {}
   });
 }
 

@@ -10,8 +10,7 @@ export const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ className = 
   const [isVisible, setIsVisible] = useState(false);
   const [isDismissed, setIsDismissed] = useState(() => {
     try {
-      return sessionStorage.getItem('simak_pwa_banner_dismissed') === 'true' ||
-             localStorage.getItem('simak_pwa_installed') === 'true';
+      return sessionStorage.getItem('simak_pwa_banner_dismissed') === 'true';
     } catch {
       return false;
     }
@@ -27,10 +26,10 @@ export const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ className = 
       return;
     }
 
-    // Berikan delay 3.5 detik agar pengalaman membuka halaman awal terasa tenang dan tidak diserbu popup
+    // Tampilkan banner setelah 1 detik
     const timer = setTimeout(() => {
       setIsVisible(true);
-    }, 3500);
+    }, 1000);
 
     // Dengarkan event native 'beforeinstallprompt' dari browser
     const unsubscribe = subscribeInstallPrompt(() => {});
@@ -48,9 +47,6 @@ export const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ className = 
 
     if (result.outcome === 'accepted') {
       setIsInstalled(true);
-      try {
-        localStorage.setItem('simak_pwa_installed', 'true');
-      } catch {}
       setTimeout(() => setIsDismissed(true), 2000);
     } else if (result.outcome === 'dismissed') {
       // User membatalkan dialog browser

@@ -264,7 +264,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
-      includeAssets: ['logo-genbi.png', 'logo-BI.png', 'pwa-192.png', 'pwa-512.png', 'pwa-maskable-512.png'],
+      includeAssets: ['logo-genbi.png', 'logo-BI.png', 'pwa-192.png', 'pwa-maskable-192.png', 'pwa-512.png', 'pwa-maskable-512.png'],
       manifest: {
         id: '/',
         name: 'SIMAK GENBI - Sistem Informasi Manajemen & Keaktifan',
@@ -288,7 +288,7 @@ export default defineConfig({
             purpose: 'any',
           },
           {
-            src: '/pwa-192.png',
+            src: '/pwa-maskable-192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'maskable',
