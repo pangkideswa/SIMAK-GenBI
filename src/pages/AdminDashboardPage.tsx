@@ -2261,11 +2261,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 onChange={(e) => setSelectedSemester(e.target.value)}
                 className="w-full sm:w-auto px-3 py-1.5 text-xs font-bold border border-slate-200 rounded-xl bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600/30 cursor-pointer shadow-xs"
               >
-                {academicPeriods.map((p) => (
-                  <option key={p.id} value={p.name}>
-                    {p.name} {p.isActive ? '(Periode Aktif)' : `(${p.statusLabel || 'Masa yang akan datang'})`}
-                  </option>
-                ))}
+                {academicPeriods.map((p) => {
+                  const cleanName = p.name.replace(/\bT\.?A\.?\s*/gi, '').trim();
+                  return (
+                    <option key={p.id} value={p.name}>
+                      {cleanName} {p.isActive ? '(Periode Aktif)' : `(${p.statusLabel || 'Masa yang akan datang'})`}
+                    </option>
+                  );
+                })}
               </select>
 
               {/* Badge Status di Desktop */}

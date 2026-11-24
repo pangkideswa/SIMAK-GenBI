@@ -270,6 +270,7 @@ export default defineConfig({
         name: 'SIMAK GENBI - Sistem Informasi Manajemen & Keaktifan',
         short_name: 'SIMAK',
         description: 'Sistem Informasi Manajemen & Keaktifan GenBI Komisariat Universitas Majalengka',
+        lang: 'id',
         start_url: '/',
         scope: '/',
         theme_color: '#1D4ED8',
@@ -278,6 +279,7 @@ export default defineConfig({
         display_override: ['standalone', 'window-controls-overlay', 'minimal-ui'],
         orientation: 'portrait-primary',
         categories: ['education', 'productivity'],
+        prefer_related_applications: false,
         icons: [
           {
             src: '/pwa-192.png',
@@ -302,12 +304,6 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
-          },
-          {
-            src: '/pwa-512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any maskable',
           },
         ],
       },

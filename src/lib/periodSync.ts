@@ -54,7 +54,8 @@ export function getAcademicPeriods(): AcademicPeriod[] {
         let changed = false;
         const normalized = parsed.map((p) => {
           let label = p.statusLabel;
-          let name = String(p.name || '').replace(/^T\.A\.\s*/i, '').trim();
+          let name = String(p.name || '').replace(/\bT\.?A\.?\s*/gi, '').trim();
+          let academicYear = String(p.academicYear || '').replace(/\bT\.?A\.?\s*/gi, '').trim();
           // Normalisasi label kaku usang 'Arsip Demisioner' atau label kosong menjadi 'Masa yang akan datang'
           if (!label || label === 'Arsip Demisioner') {
             label = p.isActive ? 'Periode Aktif' : 'Masa yang akan datang';
@@ -63,9 +64,13 @@ export function getAcademicPeriods(): AcademicPeriod[] {
           if (name !== p.name) {
             changed = true;
           }
+          if (academicYear !== p.academicYear) {
+            changed = true;
+          }
           return {
             ...p,
             name: name || p.name,
+            academicYear: academicYear || p.academicYear,
             statusLabel: label,
           };
         });
