@@ -276,7 +276,7 @@ export default defineConfig({
         theme_color: '#1D4ED8',
         background_color: '#FFFFFF',
         display: 'standalone',
-        display_override: ['standalone', 'window-controls-overlay', 'minimal-ui'],
+        display_override: ['standalone', 'minimal-ui'],
         orientation: 'portrait-primary',
         categories: ['education', 'productivity'],
         prefer_related_applications: false,

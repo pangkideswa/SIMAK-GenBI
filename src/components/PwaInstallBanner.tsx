@@ -122,15 +122,15 @@ export const PwaInstallBanner: React.FC<PwaInstallBannerProps> = ({ className = 
         )}
 
         {showAndroidTip && (
-          <div className="mt-3 p-3 rounded-2xl bg-amber-950/60 border border-amber-500/40 text-[11px] text-amber-200 leading-relaxed space-y-1.5 animate-in fade-in duration-200">
-            <p className="font-bold text-amber-100 flex items-center gap-1.5">
-              <span>⚠️</span> Chrome Memerlukan Akses HTTPS Aman
+          <div className="mt-3 p-3 rounded-2xl bg-blue-950/60 border border-blue-500/40 text-[11px] text-blue-200 leading-relaxed space-y-1.5 animate-in fade-in duration-200">
+            <p className="font-bold text-white flex items-center gap-1.5">
+              <span>💡</span> Tips Pemasangan WebAPK Resmi
             </p>
             <p>
-              Google Chrome memblokir tombol instal WebAPK jika web dibuka menggunakan IP lokal <code>http://192.168...</code> (ada tanda silang merah di browser).
+              1. Jika sebelumnya sudah ada ikon <strong>SIMAK</strong> di layar utama, silakan <strong>hapus / uninstall ikon lama</strong> tersebut terlebih dahulu.
             </p>
-            <p className="text-[10px] text-slate-300">
-              👉 Pastikan akses menggunakan domain HTTPS (seperti <code>https://onegenbi.site</code>) atau ketuk menu titik tiga ⋮ Chrome lalu pilih <strong>&quot;Tambahkan ke Layar Utama&quot;</strong>.
+            <p>
+              2. Buka menu titik tiga <strong>⋮</strong> di pojok kanan atas Chrome, lalu pilih <strong>&quot;Instal aplikasi&quot;</strong> (pastikan pilih <em>Instal aplikasi</em>, bukan Tambahkan ke Layar Utama).
             </p>
           </div>
         )}

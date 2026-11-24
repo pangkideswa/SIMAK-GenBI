@@ -4,19 +4,29 @@
  * dan menyediakan antarmuka 1-klik untuk instalasi instan (WebAPK) tanpa harus membuka menu titik tiga.
  */
 
-let deferredPrompt: any = null;
+let deferredPrompt: any = typeof window !== 'undefined' ? (window as any).__pwaInstallPrompt : null;
 const listeners = new Set<(canInstall: boolean) => void>();
 
 if (typeof window !== 'undefined') {
+  if ((window as any).__pwaInstallPrompt) {
+    deferredPrompt = (window as any).__pwaInstallPrompt;
+  }
+
+  window.addEventListener('pwa_prompt_ready', (e: any) => {
+    deferredPrompt = e.detail || (window as any).__pwaInstallPrompt;
+    listeners.forEach((fn) => fn(true));
+  });
+
   window.addEventListener('beforeinstallprompt', (e: any) => {
-    // Cegah mini-infobar default browser agar bisa digantikan oleh banner khas SIMAK GENBI
     e.preventDefault();
     deferredPrompt = e;
+    (window as any).__pwaInstallPrompt = e;
     listeners.forEach((fn) => fn(true));
   });
 
   window.addEventListener('appinstalled', () => {
     deferredPrompt = null;
+    (window as any).__pwaInstallPrompt = null;
     listeners.forEach((fn) => fn(false));
   });
 }
