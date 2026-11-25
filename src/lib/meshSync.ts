@@ -158,7 +158,7 @@ export async function fetchEvaluationsCloud(): Promise<any[] | null> {
               if (ev && (ev.user_id || ev.npm || ev.nim)) {
                 const key = ev.npm || ev.nim || ev.user_id;
                 const safeEv = sanitizeMemberIdentity(ev);
-                safeEv.total_points = Math.min(100, Math.max(0, safeEv.total_points || 0));
+                safeEv.total_points = Math.max(0, safeEv.total_points || 0);
                 currentOv[key] = {
                   ...currentOv[key],
                   ...safeEv,
@@ -187,7 +187,7 @@ export async function saveEvaluationCloud(evaluation: any): Promise<boolean> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 3000);
     const safeEval = sanitizeMemberIdentity(evaluation);
-    safeEval.total_points = Math.min(100, Math.max(0, safeEval.total_points || 0));
+    safeEval.total_points = Math.max(0, safeEval.total_points || 0);
 
     const res = await fetch('/api/evaluations', {
       method: 'POST',
@@ -324,7 +324,7 @@ export function ensureMeshChannel(): ReturnType<typeof supabase.channel> {
 
       if (incomingEval) {
         const safeEval = sanitizeMemberIdentity(incomingEval);
-        safeEval.total_points = Math.min(100, Math.max(0, safeEval.total_points || 0));
+        safeEval.total_points = Math.max(0, safeEval.total_points || 0);
 
         try {
           const rawOv = localStorage.getItem('simak_evaluations_overrides');
@@ -769,7 +769,7 @@ export async function broadcastAttendanceRecorded(record: any, evaluation?: any)
     const safeRecord = sanitizeMemberIdentity(record);
     const safeEval = evaluation ? sanitizeMemberIdentity(evaluation) : null;
     if (safeEval) {
-      safeEval.total_points = Math.min(100, Math.max(0, safeEval.total_points || 0));
+      safeEval.total_points = Math.max(0, safeEval.total_points || 0);
       // Otomatis push ke cloud evaluations
       saveEvaluationCloud(safeEval).catch(() => {});
     }

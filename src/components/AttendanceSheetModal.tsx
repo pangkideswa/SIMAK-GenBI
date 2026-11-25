@@ -64,21 +64,22 @@ export const AttendanceSheetModal: React.FC<AttendanceSheetModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-sm overflow-y-auto print:p-0 print:bg-white print:static">
       <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl overflow-hidden my-auto border border-slate-200 print:shadow-none print:border-none print:m-0 print:w-full print:rounded-none">
         {/* Header Action Bar (Hidden on Print) */}
-        <div className="px-6 py-3.5 bg-slate-900 text-white flex items-center justify-between print:hidden">
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-blue-400" />
-            <span className="text-xs font-black tracking-wide uppercase">
+        <div className="px-4 sm:px-6 py-3 sm:py-3.5 bg-slate-900 text-white flex items-center justify-between gap-2 print:hidden">
+          <div className="flex items-center gap-2 min-w-0">
+            <Users className="w-4 h-4 text-blue-400 shrink-0" />
+            <span className="text-xs font-black tracking-wide uppercase truncate">
               Cetak Berita Acara & Daftar Hadir Presensi Fisik
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handlePrint}
-              className="px-4 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black rounded-xl shadow-md flex items-center gap-1.5 transition cursor-pointer"
+              className="px-3 sm:px-4 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black rounded-xl shadow-md flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
             >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Cetak / Simpan PDF</span>
+              <Printer className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Cetak / Simpan PDF</span>
+              <span className="sm:hidden">PDF</span>
             </button>
             <button
               onClick={onClose}
@@ -90,10 +91,10 @@ export const AttendanceSheetModal: React.FC<AttendanceSheetModalProps> = ({
         </div>
 
         {/* Printable Document Body */}
-        <div ref={printRef} className="p-8 sm:p-10 text-slate-800 space-y-6 print:p-6 bg-white font-sans text-xs">
+        <div ref={printRef} className="p-4 sm:p-10 text-slate-800 space-y-6 print:p-6 bg-white font-sans text-xs">
           {/* Formal Kop Surat Bank Indonesia & GenBI UNMA (Selaras dengan Rapor Keaktifan) */}
-          <div className="border-b-2 border-slate-900 pb-4 flex items-center justify-between gap-4">
-            <div className="w-16 h-16 rounded-xl bg-white flex items-center justify-center shrink-0 p-1 border border-slate-200">
+          <div className="border-b-2 border-slate-900 pb-4 flex items-center justify-between gap-2 sm:gap-4 print:gap-4">
+            <div className="w-11 h-11 sm:w-16 sm:h-16 print:w-16 print:h-16 rounded-xl bg-white flex items-center justify-center shrink-0 p-1 border border-slate-200">
               <img
                 src="/logo-BI.png"
                 alt="Logo Bank Indonesia"
@@ -116,7 +117,7 @@ export const AttendanceSheetModal: React.FC<AttendanceSheetModalProps> = ({
               </p>
             </div>
 
-            <div className="w-16 h-16 rounded-xl bg-white flex items-center justify-center shrink-0 p-1 border border-slate-200">
+            <div className="w-11 h-11 sm:w-16 sm:h-16 print:w-16 print:h-16 rounded-xl bg-white flex items-center justify-center shrink-0 p-1 border border-slate-200">
               <img
                 src="/logo-genbi.png"
                 alt="Logo GenBI UNMA"
@@ -156,8 +157,8 @@ export const AttendanceSheetModal: React.FC<AttendanceSheetModalProps> = ({
           </div>
 
           {/* Tabel Presensi Peserta */}
-          <div className="border border-slate-300 rounded-xl overflow-hidden">
-            <table className="w-full text-left border-collapse text-[10px]">
+          <div className="border border-slate-300 rounded-xl overflow-x-auto">
+            <table className="w-full min-w-[640px] sm:min-w-0 text-left border-collapse text-[10px]">
               <thead className="bg-slate-100 text-slate-800 font-black uppercase tracking-wider border-b border-slate-300">
                 <tr>
                   <th className="py-2 px-2.5 text-center w-8 border-r border-slate-300">No</th>
@@ -222,7 +223,7 @@ export const AttendanceSheetModal: React.FC<AttendanceSheetModalProps> = ({
           </div>
 
           {/* Tanda Tangan Pengesahan BPH */}
-          <div className="pt-4 flex items-end justify-between text-[11px]">
+          <div className="pt-4 flex flex-col sm:flex-row sm:items-end justify-between gap-4 text-[11px] print:flex-row print:items-end">
             <div className="space-y-1">
               <span className="text-[9px] text-slate-400 font-mono block">VERIFIKASI INTEGRITAS DOKUMEN:</span>
               <div className="flex items-center gap-2">
@@ -235,7 +236,7 @@ export const AttendanceSheetModal: React.FC<AttendanceSheetModalProps> = ({
               </div>
             </div>
 
-            <div className="text-right space-y-1">
+            <div className="text-left sm:text-right print:text-right space-y-1">
               <p className="text-slate-600">Majalengka, {printDateFormatted}</p>
               <p className="font-bold text-slate-800">Badan Pengurus Harian (BPH)</p>
               <p className="text-[10px] text-slate-500">Komisariat Universitas Majalengka</p>

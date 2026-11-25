@@ -47,21 +47,22 @@ export const MemberReportModal: React.FC<MemberReportModalProps> = ({
       {/* Printable Area Wrapper */}
       <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl overflow-hidden my-auto border border-slate-200 print:shadow-none print:border-none print:m-0 print:w-full print:rounded-none">
         {/* Header Action Bar (Hidden on Print) */}
-        <div className="px-6 py-3.5 bg-slate-900 text-white flex items-center justify-between print:hidden">
-          <div className="flex items-center gap-2">
-            <Award className="w-4 h-4 text-amber-400" />
-            <span className="text-xs font-black tracking-wide uppercase">
+        <div className="px-4 sm:px-6 py-3 sm:py-3.5 bg-slate-900 text-white flex items-center justify-between gap-2 print:hidden">
+          <div className="flex items-center gap-2 min-w-0">
+            <Award className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="text-xs font-black tracking-wide uppercase truncate">
               Rapor Keaktifan & Rekomendasi Beasiswa Bank Indonesia
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handlePrint}
-              className="px-4 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black rounded-xl shadow-md flex items-center gap-1.5 transition cursor-pointer"
+              className="px-3 sm:px-4 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black rounded-xl shadow-md flex items-center gap-1.5 transition cursor-pointer whitespace-nowrap"
             >
-              <Printer className="w-3.5 h-3.5" />
-              <span>Cetak / Simpan PDF</span>
+              <Printer className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Cetak / Simpan PDF</span>
+              <span className="sm:hidden">PDF</span>
             </button>
             <button
               onClick={onClose}
@@ -75,11 +76,11 @@ export const MemberReportModal: React.FC<MemberReportModalProps> = ({
         {/* Formal Document Body */}
         <div
           ref={printRef}
-          className="p-8 sm:p-10 text-slate-800 space-y-6 print:p-8 bg-white"
+          className="p-4 sm:p-10 text-slate-800 space-y-6 print:p-8 bg-white"
         >
           {/* Formal Kop Surat Bank Indonesia & GenBI UNMA */}
-          <div className="border-b-2 border-slate-900 pb-4 flex items-center justify-between gap-4">
-            <div className="w-16 h-16 rounded-xl bg-white flex items-center justify-center shrink-0 p-1 border border-slate-200">
+          <div className="border-b-2 border-slate-900 pb-4 flex items-center justify-between gap-2 sm:gap-4 print:gap-4">
+            <div className="w-11 h-11 sm:w-16 sm:h-16 print:w-16 print:h-16 rounded-xl bg-white flex items-center justify-center shrink-0 p-1 border border-slate-200">
               <img
                 src="/logo-BI.png"
                 alt="Logo Bank Indonesia"
@@ -102,7 +103,7 @@ export const MemberReportModal: React.FC<MemberReportModalProps> = ({
               </p>
             </div>
 
-            <div className="w-16 h-16 rounded-xl bg-white flex items-center justify-center shrink-0 p-1 border border-slate-200">
+            <div className="w-11 h-11 sm:w-16 sm:h-16 print:w-16 print:h-16 rounded-xl bg-white flex items-center justify-center shrink-0 p-1 border border-slate-200">
               <img
                 src="/logo-genbi.png"
                 alt="Logo GenBI UNMA"
@@ -156,8 +157,8 @@ export const MemberReportModal: React.FC<MemberReportModalProps> = ({
               <span>Rekapitulasi Kehadiran & Akumulasi Poin</span>
             </h4>
 
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <table className="w-full text-xs text-left">
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full min-w-[440px] sm:min-w-0 text-xs text-left">
                 <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                   <tr>
                     <th className="py-2.5 px-3">Hadir (Sesi)</th>
@@ -214,9 +215,9 @@ export const MemberReportModal: React.FC<MemberReportModalProps> = ({
           </div>
 
           {/* Tanda Tangan & QR Code Verifikasi */}
-          <div className="pt-4 grid grid-cols-12 gap-4 items-end">
+          <div className="pt-4 grid grid-cols-1 sm:grid-cols-12 print:grid-cols-12 gap-4 items-center sm:items-end print:items-end">
             {/* QR Code Autentikasi Sistem */}
-            <div className="col-span-4 flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-200 text-center">
+            <div className="sm:col-span-4 print:col-span-4 flex flex-col items-center justify-center p-2 rounded-xl bg-slate-50 border border-slate-200 text-center">
               <QRCodeSVG value={verificationUrl} size={64} level="M" />
               <div className="flex items-center gap-1 text-[8px] font-bold text-slate-500 mt-1">
                 <ShieldCheck className="w-2.5 h-2.5 text-blue-600" />
@@ -225,7 +226,7 @@ export const MemberReportModal: React.FC<MemberReportModalProps> = ({
             </div>
 
             {/* Kolom Tanda Tangan BPH / Pembina */}
-            <div className="col-span-8 text-right space-y-1 text-xs">
+            <div className="sm:col-span-8 print:col-span-8 text-center sm:text-right print:text-right space-y-1 text-xs">
               <p className="text-slate-600">
                 Majalengka, {formatDateLongIndo(new Date())}
               </p>
@@ -237,7 +238,7 @@ export const MemberReportModal: React.FC<MemberReportModalProps> = ({
               </p>
 
               {/* Stempel / Digital Sign Placeholder */}
-              <div className="py-4 text-center inline-block pr-6">
+              <div className="py-4 text-center inline-block sm:pr-6 print:pr-6">
                 <div className="inline-block px-3 py-1 rounded-lg border-2 border-dashed border-blue-400 text-[10px] font-black text-blue-700 uppercase tracking-widest bg-blue-50/50">
                   TERVERIFIKASI SISTEM SIMAK
                 </div>

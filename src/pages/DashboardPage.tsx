@@ -34,7 +34,6 @@ import {
   Download,
   SlidersHorizontal,
   Share2,
-  Flashlight,
   KeyRound,
   Eye,
   EyeOff,
@@ -47,6 +46,7 @@ import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react';
 import { Html5Qrcode } from 'html5-qrcode';
 import html2canvas from 'html2canvas-pro';
 import { supabase } from '../lib/supabase';
+import { DEFAULT_SEEDED_ATTENDANCES_60, DEFAULT_EVALUATIONS_60 } from '../lib/defaultRoster';
 import { uploadProofToGDrive } from '../lib/gdrive';
 import { normalizeStudentId, syncMemberUpdate } from '../lib/memberSync';
 import { formatDateTimeWIB } from '../lib/dateUtils';
@@ -174,104 +174,7 @@ const DEFAULT_SAMPLE_EVENTS: EventType[] = [
   },
 ];
 
-const DEFAULT_SAMPLE_LEADERBOARD: MemberEvaluation[] = [
-  {
-    user_id: 'a1111111-1111-1111-1111-111111111111',
-    npm: '2414101078',
-    nim: '2414101078',
-    email: 'admin@genbi-unma.ac.id',
-    full_name: 'Ahmad Fauzi',
-    division: 'BPH',
-    role: 'admin',
-    avatar_url: null,
-    total_points: 95,
-    total_hadir: 7,
-    total_izin: 0,
-    total_alfa: 0,
-    attendance_percentage: 100.0,
-    predicate: 'Sangat Aktif',
-  },
-  {
-    user_id: 'b2222222-2222-2222-2222-222222222222',
-    npm: '2214100010',
-    nim: '2214100010',
-    email: 'deden@genbi-unma.ac.id',
-    full_name: 'Deden Kurniawan',
-    division: 'Publikasi dan Sosialisasi',
-    role: 'kadiv',
-    avatar_url: null,
-    total_points: 85,
-    total_hadir: 6,
-    total_izin: 1,
-    total_alfa: 0,
-    attendance_percentage: 85.7,
-    predicate: 'Sangat Aktif',
-  },
-  {
-    user_id: 'c3333333-3333-3333-3333-333333333333',
-    npm: '2214100048',
-    nim: '2214100048',
-    email: 'fahmi@genbi-unma.ac.id',
-    full_name: 'Muhamad Fahmi',
-    division: 'Publikasi dan Sosialisasi',
-    role: 'member',
-    avatar_url: null,
-    total_points: 60,
-    total_hadir: 4,
-    total_izin: 2,
-    total_alfa: 0,
-    attendance_percentage: 57.1,
-    predicate: 'Aktif',
-  },
-  {
-    user_id: 'sample-3',
-    npm: '2214100025',
-    nim: '2214100025',
-    email: 'siti@genbi-unma.ac.id',
-    full_name: 'Siti Rahmawati',
-    division: 'Pendidikan',
-    role: 'kadiv',
-    avatar_url: null,
-    total_points: 75,
-    total_hadir: 5,
-    total_izin: 1,
-    total_alfa: 0,
-    attendance_percentage: 71.4,
-    predicate: 'Aktif',
-  },
-  {
-    user_id: 'sample-4',
-    npm: '2214100033',
-    nim: '2214100033',
-    email: 'fajar@genbi-unma.ac.id',
-    full_name: 'Fajar Pratama',
-    division: 'Lingkungan Hidup',
-    role: 'kadiv',
-    avatar_url: null,
-    total_points: 70,
-    total_hadir: 5,
-    total_izin: 0,
-    total_alfa: 1,
-    attendance_percentage: 71.4,
-    predicate: 'Aktif',
-  },
-  {
-    user_id: 'sample-6',
-    npm: '2214100052',
-    nim: '2214100052',
-    email: 'rizky@genbi-unma.ac.id',
-    full_name: 'Rizky Ramadhan',
-    division: 'Kewirausahaan',
-    role: 'member',
-    avatar_url: null,
-    total_points: 40,
-    total_hadir: 3,
-    total_izin: 1,
-    total_alfa: 2,
-    attendance_percentage: 42.9,
-    predicate: 'Perlu Pembinaan',
-  },
-];
+const DEFAULT_SAMPLE_LEADERBOARD: MemberEvaluation[] = DEFAULT_EVALUATIONS_60;
 
 const DEFAULT_SAMPLE_ATTENDANCES: AttendanceRecord[] = [
   {
@@ -545,7 +448,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   // Pop-up Notifikasi Berhasil Presensi & Sinkronisasi Leaderboard
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [isTorchOn, setIsTorchOn] = useState(false);
 
   // Form Ubah Password / PIN Mandiri State
   const [showPasswordForm, setShowPasswordForm] = useState(false);
@@ -1119,20 +1021,134 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         .select('*')
         .order('total_points', { ascending: false });
 
-      const baseList = (data && data.length > 0)
-        ? data
-        : (cloudData && cloudData.length > 0)
-        ? cloudData
-        : DEFAULT_SAMPLE_LEADERBOARD;
+      const lbMap = new Map<string, any>();
+      for (const item of DEFAULT_SAMPLE_LEADERBOARD) {
+        const key = normalizeStudentId(item.npm || item.nim) || item.user_id;
+        if (key) lbMap.set(key, item);
+      }
+      if (cloudData && cloudData.length > 0) {
+        for (const item of cloudData as any[]) {
+          const key = normalizeStudentId(item.npm || item.nim) || item.user_id;
+          if (key) lbMap.set(key, { ...(lbMap.get(key) || {}), ...item });
+        }
+      }
+      if (data && data.length > 0) {
+        for (const item of data as any[]) {
+          const key = normalizeStudentId(item.npm || item.nim) || item.user_id;
+          if (key) lbMap.set(key, { ...(lbMap.get(key) || {}), ...item });
+        }
+      }
+      const baseList = Array.from(lbMap.values());
 
       const mapped: MemberEvaluation[] = baseList.map((d: any) => ({
         ...d,
         npm: d.npm || d.nim || '-',
         nim: d.npm || d.nim || '-',
       }));
+      let localAllAtt: any[] = [];
+      try {
+        const rawAll = localStorage.getItem('simak_all_attendances');
+        if (rawAll) localAllAtt = filterDeletedAttendances(JSON.parse(rawAll));
+      } catch {}
+
+      try {
+        const { data: supaAtts } = await supabase
+          .from('attendances')
+          .select('id, user_id, event_id, status, verified, scanned_at');
+        if (supaAtts && supaAtts.length > 0) {
+          for (const sa of supaAtts as any[]) {
+            if (!localAllAtt.some((la) => la.id === sa.id || (la.user_id === sa.user_id && la.event_id === sa.event_id))) {
+              localAllAtt.push(sa);
+            }
+          }
+          localAllAtt = filterDeletedAttendances(localAllAtt);
+        }
+      } catch {}
+
+      for (const sa of DEFAULT_SEEDED_ATTENDANCES_60) {
+        const exists = localAllAtt.some(
+          (la) =>
+            la.id === sa.id ||
+            (la.event_id === sa.event_id &&
+              (la.user_id === sa.user_id ||
+                normalizeStudentId(la.npm || la.nim || la.member_npm) === sa.npm))
+        );
+        if (!exists) {
+          localAllAtt.push(sa);
+        }
+      }
+      localAllAtt = filterDeletedAttendances(localAllAtt);
+
+      const activeEvList = events.length > 0 ? events : [];
+      const eventMap = new Map(activeEvList.map((ev) => [ev.id, ev]));
+      const validEventIds = new Set(activeEvList.map((ev) => ev.id));
+      const totalAgendaCount = Math.max(1, activeEvList.length);
+
       const finalLb = applyEvaluationsOverrides(applyOverrides(mapped))
         .filter((m) => !isSuperAdminAccount(m))
-        .map((m) => sanitizeMemberIdentity(m));
+        .map((rawM) => {
+          const m = sanitizeMemberIdentity(rawM);
+          const cleanNpm = normalizeStudentId(m.npm || m.nim);
+          const allUserAtts = localAllAtt.filter(
+            (a) =>
+              a.user_id === m.user_id ||
+              (cleanNpm && normalizeStudentId(a.npm || a.nim || a.member_npm) === cleanNpm)
+          );
+          const eventAtts = allUserAtts.filter(
+            (a) =>
+              !String(a.event_id || '').startsWith('bph-nilai-') &&
+              (validEventIds.size === 0 || validEventIds.has(a.event_id) || a.status === 'delegasi')
+          );
+          const bonusAtts = allUserAtts.filter((a) => String(a.event_id || '').startsWith('bph-nilai-'));
+
+          if ((eventAtts.length > 0 || bonusAtts.length > 0) && activeEvList.length > 0) {
+            const uniqueByEvent = new Map<string, any>();
+            for (const a of eventAtts) {
+              if (!uniqueByEvent.has(a.event_id)) uniqueByEvent.set(a.event_id, a);
+            }
+            let rHadir = 0;
+            let rIzin = 0;
+            let rAlfa = 0;
+            let rPoints = 0;
+            uniqueByEvent.forEach((a) => {
+              if (a.status === 'alfa') {
+                rAlfa += 1;
+              } else if (a.verified) {
+                if (a.status === 'izin') {
+                  rIzin += 1;
+                } else if (a.status === 'hadir' || a.status === 'delegasi') {
+                  rHadir += 1;
+                  const evObj = eventMap.get(a.event_id);
+                  const pts = Number(a.event_points ?? evObj?.points ?? (a.status === 'delegasi' ? 30 : 15));
+                  rPoints += pts;
+                }
+              }
+            });
+            for (const b of bonusAtts) {
+              rPoints += Number(b.event_points ?? 0);
+            }
+            rPoints = Math.max(0, rPoints);
+
+            const rPct = Math.min(100, Math.round((rHadir / totalAgendaCount) * 100));
+            const rPred: EvaluationPredicate =
+              rPoints >= 80 && rPct >= 75
+                ? 'Sangat Aktif'
+                : rPoints >= 50 || rPct >= 50
+                ? 'Aktif'
+                : 'Perlu Pembinaan';
+            return {
+              ...m,
+              total_points: rPoints,
+              total_hadir: rHadir,
+              total_izin: rIzin,
+              total_alfa: rAlfa,
+              attendance_percentage: rPct,
+              predicate: rPred,
+            };
+          }
+          return m;
+        })
+        .sort((a, b) => b.total_points - a.total_points);
       setLeaderboard(finalLb);
       localStorage.setItem('simak_leaderboard_cache', JSON.stringify(finalLb));
     } catch {
@@ -1377,6 +1393,24 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         }
       } catch {}
 
+      // Gabungkan aktivitas presensi bawaan untuk akun 60 anggota jika event belum tercatat
+      const cleanUserNpmForSeed = normalizeStudentId(user.npm || user.nim || '');
+      for (const sa of DEFAULT_SEEDED_ATTENDANCES_60) {
+        if (
+          (sa.user_id === user.id || (cleanUserNpmForSeed && sa.npm === cleanUserNpmForSeed)) &&
+          !listToEnrich.some((a: any) => a.event_id === sa.event_id)
+        ) {
+          listToEnrich.push({
+            id: sa.id,
+            event_id: sa.event_id,
+            status: sa.status,
+            proof_url: null,
+            verified: sa.verified,
+            scanned_at: sa.scanned_at,
+          });
+        }
+      }
+
       // Bersihkan presensi yang ada di blacklist hapus
       listToEnrich = filterDeletedAttendances(listToEnrich);
 
@@ -1407,7 +1441,25 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         setAttendances(enriched);
         localStorage.setItem('simak_attendances_' + user.id, JSON.stringify(enriched));
       } else {
-        setAttendances([]);
+        const cleanUserNpm = normalizeStudentId(user.npm || user.nim || '');
+        const seededUserAtts = DEFAULT_SEEDED_ATTENDANCES_60
+          .filter((a) => a.user_id === user.id || (cleanUserNpm && a.npm === cleanUserNpm))
+          .map((a) => {
+            const ev = events.find((e) => e.id === a.event_id);
+            return {
+              id: a.id,
+              event_id: a.event_id,
+              status: a.status,
+              proof_url: null,
+              verified: a.verified,
+              scanned_at: a.scanned_at,
+              event_title: ev?.title || 'Agenda Kegiatan GenBI',
+              event_points: ev?.points || a.event_points || 15,
+              event_date: ev?.event_date || a.scanned_at,
+              event_category: ev?.category || 'Proker',
+            };
+          });
+        setAttendances(filterDeletedAttendances(seededUserAtts));
       }
     } catch {
       const localSaved = localStorage.getItem('simak_attendances_' + user.id);
@@ -1666,6 +1718,110 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     };
   }, [user.id, user.role, user.division]);
 
+  // Sinkronkan jumlah Hadir, Izin Resmi, Alfa & Persentase Kehadiran secara akurat dari agenda + riwayat nyata
+  useEffect(() => {
+    if (events.length === 0) return;
+
+    const eventMap = new Map(events.map((ev) => [ev.id, ev]));
+    const validEventIds = new Set(events.map((ev) => ev.id));
+    const uniqueByEvent = new Map<string, AttendanceRecord>();
+    let bonusPoints = 0;
+    for (const att of attendances) {
+      if (!att.event_id) continue;
+      if (String(att.event_id).startsWith('bph-nilai-')) {
+        bonusPoints += Number(att.event_points ?? 0);
+        continue;
+      }
+      if (!validEventIds.has(att.event_id) && att.status !== 'delegasi') continue;
+      if (!uniqueByEvent.has(att.event_id)) {
+        uniqueByEvent.set(att.event_id, att);
+      }
+    }
+
+    let realHadir = 0;
+    let realIzin = 0;
+    let realAlfa = 0;
+    let realPoints = bonusPoints;
+    uniqueByEvent.forEach((att) => {
+      if (att.status === 'alfa') {
+        realAlfa += 1;
+      } else if (att.verified) {
+        if (att.status === 'izin') {
+          realIzin += 1;
+        } else if (att.status === 'hadir' || att.status === 'delegasi') {
+          realHadir += 1;
+          const evObj = eventMap.get(att.event_id);
+          realPoints += Number(att.event_points ?? evObj?.points ?? (att.status === 'delegasi' ? 30 : 15));
+        }
+      }
+    });
+    realPoints = Math.max(0, realPoints);
+
+    const realPercentage = Math.min(100, Math.round((realHadir / Math.max(1, events.length)) * 100));
+
+    setEvaluation((prev) => {
+      const nextPoints = attendances.length > 0 ? realPoints : prev.total_points;
+      const realPredicate: EvaluationPredicate =
+        nextPoints >= 80 && realPercentage >= 75
+          ? 'Sangat Aktif'
+          : nextPoints >= 50 || realPercentage >= 50
+          ? 'Aktif'
+          : 'Perlu Pembinaan';
+
+      if (
+        prev.total_points === nextPoints &&
+        prev.total_hadir === realHadir &&
+        prev.total_izin === realIzin &&
+        prev.total_alfa === realAlfa &&
+        prev.attendance_percentage === realPercentage &&
+        prev.predicate === realPredicate
+      ) {
+        return prev;
+      }
+      const nextEval: MemberEvaluation = {
+        ...prev,
+        total_points: nextPoints,
+        total_hadir: realHadir,
+        total_izin: realIzin,
+        total_alfa: realAlfa,
+        attendance_percentage: realPercentage,
+        predicate: realPredicate,
+      };
+      try {
+        localStorage.setItem('simak_eval_' + user.id, JSON.stringify(nextEval));
+      } catch {}
+      return nextEval;
+    });
+
+    const myCleanNpm = normalizeStudentId(user.npm || user.nim || profile.npm);
+    setLeaderboard((prev) =>
+      prev
+        .map((item) => {
+          const isMe =
+            item.user_id === user.id ||
+            (myCleanNpm && normalizeStudentId(item.npm || item.nim) === myCleanNpm);
+          if (!isMe) return item;
+          const nextPoints = attendances.length > 0 ? realPoints : item.total_points;
+          const rPred: EvaluationPredicate =
+            nextPoints >= 80 && realPercentage >= 75
+              ? 'Sangat Aktif'
+              : nextPoints >= 50 || realPercentage >= 50
+              ? 'Aktif'
+              : 'Perlu Pembinaan';
+          return {
+            ...item,
+            total_points: nextPoints,
+            total_hadir: realHadir,
+            total_izin: realIzin,
+            total_alfa: realAlfa,
+            attendance_percentage: realPercentage,
+            predicate: rPred,
+          };
+        })
+        .sort((a, b) => b.total_points - a.total_points)
+    );
+  }, [events, attendances, user.id]);
+
   // Handler Sinkronisasi Manual Antrean Offline
   const handleManualSyncQueue = async () => {
     setIsSyncingQueue(true);
@@ -1745,7 +1901,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
   // Hentikan streaming kamera dan bersihkan scanner
   const stopCameraScanner = async () => {
-    setIsTorchOn(false);
     if (qrScannerRef.current) {
       try {
         if (qrScannerRef.current.isScanning) {
@@ -1759,27 +1914,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     }
     setIsCameraActive(false);
     setIsCameraStarting(false);
-  };
-
-  // Toggle Senter / Flashlight pada Scanner Kamera
-  const toggleTorch = async () => {
-    try {
-      const videoEl = document.querySelector('#qr-reader video') as HTMLVideoElement;
-      const track = videoEl?.srcObject
-        ? (videoEl.srcObject as MediaStream).getVideoTracks()[0]
-        : null;
-      if (track) {
-        const nextTorch = !isTorchOn;
-        await (track.applyConstraints as any)({
-          advanced: [{ torch: nextTorch }],
-        });
-        setIsTorchOn(nextTorch);
-      } else {
-        showToast('Fitur senter/flashlight memerlukan kamera belakang aktif.', 'warning');
-      }
-    } catch {
-      showToast('Senter/Flashlight tidak didukung pada browser atau perangkat ini.', 'warning');
-    }
   };
 
   // Update Password / PIN Mandiri Anggota
@@ -2170,8 +2304,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       fetchEvaluation();
       fetchAttendances();
 
-      // Skala poin maksimal 100
-      const newTotalPoints = Math.min(100, Math.max(0, evaluation.total_points + matchedEvent.points));
+      // Poin keaktifan unlimited (terus bertambah melewati 100)
+      const newTotalPoints = Math.max(0, evaluation.total_points + matchedEvent.points);
       const newPredicate: EvaluationPredicate =
         newTotalPoints >= 80 ? 'Sangat Aktif' :
         newTotalPoints >= 60 ? 'Aktif' : 'Perlu Pembinaan';
@@ -2508,42 +2642,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     }
   };
 
-  // Predicate Tier Helpers
-  const getTierInfo = (points: number) => {
-    if (points >= 90) {
-      return {
-        tierName: 'Platinum Garuda',
-        color: 'from-amber-400 via-amber-300 to-yellow-500 text-slate-950',
-        badgeBg: 'bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-black',
-        desc: 'Prioritas rekomendasi perpanjangan beasiswa Bank Indonesia & kepengurusan BPH.',
-      };
-    }
-    if (points >= 75) {
-      return {
-        tierName: 'Gold Star',
-        color: 'from-emerald-400 to-teal-500 text-white',
-        badgeBg: 'bg-emerald-50 text-emerald-800 border-emerald-300',
-        desc: 'Sangat aktif dalam seluruh agenda dan program kerja komisariat.',
-      };
-    }
-    if (points >= 50) {
-      return {
-        tierName: 'Silver Member',
-        color: 'from-blue-500 to-indigo-600 text-white',
-        badgeBg: 'bg-blue-50 text-blue-800 border-blue-300',
-        desc: 'Keaktifan reguler memenuhi batas standar evaluasi Bank Indonesia.',
-      };
-    }
-    return {
-      tierName: 'Bronze (Baru/Pembinaan)',
-      color: 'from-slate-500 to-slate-700 text-white',
-      badgeBg: 'bg-slate-100 text-slate-700 border-slate-300',
-      desc: 'Tingkatkan presensi agenda wajib dan program kerja komisariat.',
-    };
-  };
-
-  const currentTier = getTierInfo(evaluation.total_points);
-
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col items-center relative overflow-x-hidden">
       {/* Background Micro Grid Pattern & Radial Mesh */}
@@ -2578,18 +2676,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
       {/* Switch Banner jika BPH sedang melihat tampilan anggota */}
       {onSwitchToAdminView && (
-        <div className="w-full bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 text-white px-4 py-2.5 flex items-center justify-between text-xs shadow-md border-b border-blue-600/40 sticky top-0 z-40">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-            <span className="font-semibold">
+        <div className="w-full bg-gradient-to-r from-blue-700 via-blue-800 to-indigo-900 text-white px-3 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between gap-2 text-xs shadow-md border-b border-blue-600/40 sticky top-0 z-40">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <span className="font-semibold truncate">
               Mode Pratinjau Anggota (BPH) &bull; {profile.fullName}
             </span>
           </div>
           <button
             onClick={onSwitchToAdminView}
-            className="px-3 py-1 bg-white text-blue-900 rounded-lg font-bold text-[11px] hover:bg-blue-50 transition shadow-xs cursor-pointer"
+            className="px-2.5 sm:px-3 py-1 bg-white text-blue-900 rounded-lg font-bold text-[11px] hover:bg-blue-50 transition shadow-xs cursor-pointer shrink-0 whitespace-nowrap"
           >
-            Kembali ke Panel BPH &rarr;
+            Kembali ke BPH &rarr;
           </button>
         </div>
       )}
@@ -3079,52 +3177,31 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight leading-snug">
                         Evaluasi Keaktifan Anggota
                       </h3>
-                      <p className="text-[11px] sm:text-xs text-slate-500 font-medium leading-normal mt-0.5">
-                        Standar Evaluasi Penerima Beasiswa Bank Indonesia
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Predikat Badge (Di Mobile berada di baris tersendiri yang rapi, tidak menyempitkan judul) */}
-                  <div className="self-start sm:self-auto shrink-0 pl-11 sm:pl-0">
-                    <div className={`px-3 py-1 rounded-full border text-xs font-black flex items-center gap-1.5 shadow-xs ${currentTier.badgeBg}`}>
-                      <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                      <span>{currentTier.tierName}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Score & Progress */}
-                <div className="space-y-2.5 pt-1">
-                  <div className="flex justify-between items-baseline">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-black text-slate-900 tracking-tight">
-                        {evaluation.total_points}
-                      </span>
-                      <span className="text-xs font-bold text-slate-400">/ 100 Poin</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xs font-extrabold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-100">
-                        {evaluation.attendance_percentage}% Tingkat Kehadiran
-                      </span>
-                    </div>
+                {/* Status Evaluasi & Tingkat Kehadiran (Angka poin bersifat internal BPH) */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 p-3.5 rounded-2xl bg-slate-50/90 border border-slate-200/70">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      Status:
+                    </span>
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-black border ${
+                        evaluation.predicate === 'Sangat Aktif'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : evaluation.predicate === 'Aktif'
+                          ? 'bg-blue-50 text-blue-700 border-blue-200'
+                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                      }`}
+                    >
+                      {evaluation.predicate}
+                    </span>
                   </div>
-
-                  {/* Gradient Multi-Level Progress Bar */}
-                  <div className="w-full h-3.5 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200/70 shadow-inner">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-amber-400 transition-all duration-700 ease-out shadow-xs"
-                      style={{
-                        width: `${Math.max(Math.min(evaluation.total_points, 100), 4)}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[10px] font-bold text-slate-400 px-0.5">
-                    <span>0 Poin</span>
-                    <span>50 (Minimal)</span>
-                    <span>75 (Aman)</span>
-                    <span>100 (Optimal)</span>
-                  </div>
+                  <span className="text-xs font-extrabold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+                    {evaluation.attendance_percentage}% Tingkat Kehadiran
+                  </span>
                 </div>
 
                 {/* Metric counters */}
@@ -3800,17 +3877,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                               const rankNumber = idx + 1;
 
                               const statusBadge =
-                                member.total_points >= 75 ? (
+                                member.predicate === 'Sangat Aktif' ? (
                                   <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black">
-                                    Aman / Rekomendasi
+                                    Sangat Aktif
                                   </span>
-                                ) : member.total_points >= 50 ? (
-                                  <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-bold">
-                                    Pantau Keaktifan
+                                ) : member.predicate === 'Aktif' ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold">
+                                    Aktif
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black">
-                                    Peringatan / Perlu Pembinaan
+                                    Perlu Pembinaan
                                   </span>
                                 );
 
@@ -3910,68 +3987,39 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   <div className="p-5 rounded-3xl bg-white/90 backdrop-blur-md border border-white ring-1 ring-slate-900/5 shadow-xs space-y-4">
                     <div>
                       <h4 className="text-sm font-extrabold text-slate-900">
-                        Pedoman Evaluasi Beasiswa Bank Indonesia
+                        Pedoman Status Keaktifan Anggota
                       </h4>
                       <p className="text-xs text-slate-500">
-                        Ketentuan bobot keaktifan GenBI Komisariat Universitas Majalengka:
+                        Penilaian keaktifan GenBI Komisariat Universitas Majalengka berdasarkan kehadiran kegiatan, tugas delegasi, dan evaluasi BPH:
                       </p>
                     </div>
 
                     <div className="space-y-3">
-                      <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 flex items-start gap-3">
-                        <div className="p-2 rounded-xl bg-amber-400 text-slate-950 font-black text-xs">
-                          90-100
-                        </div>
-                        <div>
-                          <span className="font-extrabold text-xs text-amber-900 block">
-                            Platinum Garuda (Sangat Aktif)
-                          </span>
-                          <p className="text-[11px] text-amber-800">
-                            Peringkat tertinggi. Memenuhi seluruh presensi proker dan agenda wajib. Berhak atas surat rekomendasi prioritas beasiswa & kepengurusan.
-                          </p>
-                        </div>
-                      </div>
-
                       <div className="p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex items-start gap-3">
-                        <div className="p-2 rounded-xl bg-emerald-500 text-white font-black text-xs">
-                          75-89
-                        </div>
-                        <div>
-                          <span className="font-extrabold text-xs text-emerald-900 block">
-                            Gold Star (Aktif Unggul)
-                          </span>
-                          <p className="text-[11px] text-emerald-800">
-                            Tingkat keaktifan sangat baik. Memenuhi seluruh batas minimal ketentuan keaktifan Bank Indonesia.
-                          </p>
-                        </div>
+                        <span className="px-2.5 py-1 rounded-xl bg-emerald-600 text-white font-black text-[11px] shrink-0">
+                          Sangat Aktif
+                        </span>
+                        <p className="text-[11px] text-emerald-900 leading-relaxed">
+                          Kehadiran konsisten (&ge; 75%) serta aktif berkontribusi dalam proker, delegasi, dan koordinasi tim. Memenuhi syarat prioritas rekomendasi beasiswa.
+                        </p>
                       </div>
 
                       <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200 flex items-start gap-3">
-                        <div className="p-2 rounded-xl bg-blue-500 text-white font-black text-xs">
-                          50-74
-                        </div>
-                        <div>
-                          <span className="font-extrabold text-xs text-blue-900 block">
-                            Silver Member (Standar Minimal)
-                          </span>
-                          <p className="text-[11px] text-blue-800">
-                            Batas aman evaluasi. Dianjurkan meningkatkan kehadiran pada agenda proker mendatang.
-                          </p>
-                        </div>
+                        <span className="px-2.5 py-1 rounded-xl bg-blue-600 text-white font-black text-[11px] shrink-0">
+                          Aktif
+                        </span>
+                        <p className="text-[11px] text-blue-900 leading-relaxed">
+                          Memenuhi batas aman evaluasi (&ge; 50%). Tetap pertahankan kehadiran dan keaktifan pada agenda proker berikutnya.
+                        </p>
                       </div>
 
                       <div className="p-3.5 rounded-2xl bg-rose-50/70 border border-rose-200 flex items-start gap-3">
-                        <div className="p-2 rounded-xl bg-rose-500 text-white font-black text-xs">
-                          &lt; 50
-                        </div>
-                        <div>
-                          <span className="font-extrabold text-xs text-rose-900 block">
-                            Bronze (Perlu Pembinaan)
-                          </span>
-                          <p className="text-[11px] text-rose-800">
-                            Di bawah standar minimum. Wajib mengikuti pembinaan khusus bersama BPH Komisariat UNMA.
-                          </p>
-                        </div>
+                        <span className="px-2.5 py-1 rounded-xl bg-rose-600 text-white font-black text-[11px] shrink-0">
+                          Perlu Pembinaan
+                        </span>
+                        <p className="text-[11px] text-rose-900 leading-relaxed">
+                          Kehadiran dan keaktifan berada di bawah standar minimum (&lt; 50%). Akan ditindaklanjuti melalui pembinaan khusus bersama BPH.
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -3988,7 +4036,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       {/* Modal ID QR Anggota (High-Res Digital Stamp) */}
       {showQrModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-sm rounded-[32px] bg-white p-6 shadow-2xl space-y-5 text-center relative border border-slate-100">
+          <div className="w-full max-w-sm rounded-[32px] bg-white p-5 sm:p-6 shadow-2xl space-y-5 text-center relative border border-slate-100 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowQrModal(false)}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
@@ -4034,7 +4082,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       {/* Modal Presensi QR (Live Camera Scanner Viewfinder + Manual Input) */}
       {showScanModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-sm rounded-[32px] bg-white p-6 shadow-2xl space-y-4 text-center relative border border-slate-100">
+          <div className="w-full max-w-sm rounded-[32px] bg-white p-5 sm:p-6 shadow-2xl space-y-4 text-center relative border border-slate-100 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => {
                 isProcessingScanRef.current = false;
@@ -4095,8 +4143,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
             {scanMode === 'camera' ? (
               <div className="space-y-3">
-                {/* Viewfinder Kamera Scanner Real-Time */}
-                <div className="relative w-full h-64 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-inner flex items-center justify-center">
+                {/* Viewfinder Kamera Scanner Real-Time (Persegi 1:1 Clean) */}
+                <div className="relative w-full max-w-[270px] aspect-square mx-auto rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-inner flex items-center justify-center">
                   {/* Container Html5Qrcode video */}
                   <div
                     id="qr-reader"
@@ -4104,11 +4152,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   />
 
                   {/* Loading State saat inisialisasi kamera */}
-                  {isCameraStarting && (
+                  {(isCameraStarting || (!isCameraActive && !cameraError)) && (
                     <div className="absolute inset-0 bg-slate-950/85 flex flex-col items-center justify-center text-white gap-2 p-4 z-20">
                       <RefreshCw className="w-6 h-6 text-blue-400 animate-spin" />
                       <span className="text-xs font-bold">Mengaktifkan Kamera Scanner...</span>
-                      <span className="text-[10px] text-slate-400">Pastikan izin kamera diizinkan di browser</span>
                     </div>
                   )}
 
@@ -4130,86 +4177,43 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       </button>
                     </div>
                   )}
-
-                  {/* Overlay Viewfinder saat kamera berjalan aktif */}
-                  {isCameraActive && !cameraError && (
-                    <>
-                      {/* Top Overlay Bar */}
-                      <div className="absolute top-3 inset-x-3 flex items-center justify-end z-10 pointer-events-none">
-                        <div className="flex items-center gap-1.5 pointer-events-auto">
-                          {/* Tombol Toggle Senter / Torch */}
-                          <button
-                            type="button"
-                            onClick={toggleTorch}
-                            className={`p-2 rounded-xl backdrop-blur-md border transition cursor-pointer ${
-                              isTorchOn
-                                ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-md shadow-amber-400/30'
-                                : 'bg-slate-900/75 hover:bg-slate-900 text-white border-white/20'
-                            }`}
-                            title={isTorchOn ? 'Matikan Senter' : 'Nyalakan Senter (Flashlight)'}
-                          >
-                            <Flashlight className={`w-3.5 h-3.5 ${isTorchOn ? 'text-slate-950 animate-pulse' : 'text-amber-300'}`} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = cameraFacing === 'environment' ? 'user' : 'environment';
-                              setCameraFacing(next);
-                            }}
-                            className="p-2 rounded-xl bg-slate-900/75 hover:bg-slate-900 text-white backdrop-blur-md border border-white/20 transition cursor-pointer"
-                            title="Ganti Kamera Depan/Belakang"
-                          >
-                            <RefreshCw className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* 4 Sudut Reticle Viewfinder (Corner Brackets) */}
-                      <div className="absolute inset-8 pointer-events-none z-10 flex flex-col justify-between">
-                        <div className="flex justify-between">
-                          <div className="w-6 h-6 border-t-3 border-l-3 border-emerald-400 rounded-tl-lg shadow-[0_0_8px_#34d399]" />
-                          <div className="w-6 h-6 border-t-3 border-r-3 border-emerald-400 rounded-tr-lg shadow-[0_0_8px_#34d399]" />
-                        </div>
-                        <div className="flex justify-between">
-                          <div className="w-6 h-6 border-b-3 border-l-3 border-emerald-400 rounded-bl-lg shadow-[0_0_8px_#34d399]" />
-                          <div className="w-6 h-6 border-b-3 border-r-3 border-emerald-400 rounded-br-lg shadow-[0_0_8px_#34d399]" />
-                        </div>
-                      </div>
-
-                      {/* Laser Beam Bergerak Naik Turun */}
-                      <div className="absolute inset-x-8 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399] animate-scan-beam pointer-events-none z-10" />
-
-                      {/* Bottom Instruction Pill */}
-                      <div className="absolute bottom-2.5 inset-x-4 z-10 text-center pointer-events-none">
-                        <span className="px-3 py-1 rounded-full bg-slate-900/80 backdrop-blur-md text-[10px] text-slate-200 font-bold border border-white/10 shadow-xs">
-                          Arahkan kamera ke QR Code kegiatan
-                        </span>
-                      </div>
-                    </>
-                  )}
                 </div>
 
-                {/* Input Kamera File Foto Alternatif (Fallback jika streaming tidak diizinkan di browser pengguna) */}
+                {/* Input Kamera File Foto Alternatif */}
                 <input
                   type="file"
                   ref={qrImageInputRef}
                   accept="image/*"
-                  capture="environment"
                   className="hidden"
                   onChange={handleScanFromImageFile}
                 />
                 <div id="qr-reader-file-temp" style={{ display: 'none' }} />
 
-                <button
-                  type="button"
-                  onClick={() => qrImageInputRef.current?.click()}
-                  disabled={isScanningImage || isSubmittingAttendance}
-                  className="w-full py-2.5 px-3 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200/90 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer shadow-xs active:scale-[0.98]"
-                >
-                  <Camera className="w-4 h-4 text-slate-500 shrink-0" />
-                  <span>{isScanningImage ? 'Membaca Foto Barcode...' : '📸 Alternatif: Ambil Foto / File Barcode'}</span>
-                </button>
+                <div className="flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = cameraFacing === 'environment' ? 'user' : 'environment';
+                      setCameraFacing(next);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Ganti Kamera</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => qrImageInputRef.current?.click()}
+                    disabled={isScanningImage || isSubmittingAttendance}
+                    className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                  >
+                    <span>{isScanningImage ? 'Membaca QR...' : 'Pilih Foto QR'}</span>
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-slate-400 font-medium">
+                  Arahkan kamera ke QR Code kegiatan yang ditampilkan panitia.
+                </p>
               </div>
             ) : (
               <form
@@ -4250,7 +4254,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       {/* ======================================================== */}
       {showSuccessModal && attendanceSuccessData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-sm rounded-[32px] bg-white p-6 shadow-2xl relative border border-slate-100 overflow-hidden text-center space-y-4">
+          <div className="w-full max-w-sm rounded-[32px] bg-white p-5 sm:p-6 shadow-2xl relative border border-slate-100 max-h-[90vh] overflow-y-auto overflow-x-hidden text-center space-y-4">
             {/* Visual Ambient Glow */}
             <div className="absolute -top-16 -right-16 w-44 h-44 rounded-full bg-amber-400/20 blur-2xl pointer-events-none" />
             <div className="absolute -bottom-12 -left-12 w-40 h-40 rounded-full bg-emerald-400/20 blur-2xl pointer-events-none" />
@@ -4369,7 +4373,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       {/* Modal Ajukan Izin */}
       {showIzinModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-sm rounded-[32px] bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100">
+          <div className="w-full max-w-sm rounded-[32px] bg-white p-5 sm:p-6 shadow-2xl space-y-4 relative border border-slate-100 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => {
                 setShowIzinModal(false);
@@ -4508,16 +4512,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     )}
                   </div>
 
-                  <div className="pt-1">
-                    <span className="text-[10px] text-slate-400 block mb-1">Atau tempelkan tautan URL berkas:</span>
-                    <input
-                      type="url"
-                      value={proofUrl}
-                      onChange={(e) => setProofUrl(e.target.value)}
-                      placeholder="https://drive.google.com/..."
-                      className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-600/30"
-                    />
-                  </div>
                 </div>
 
                 <button
@@ -4717,7 +4711,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       {/* Modal Pengaturan Profil Anggota */}
       {showProfileModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-white p-6 sm:p-7 shadow-2xl space-y-4 relative border border-slate-100">
+          <div className="w-full max-w-md rounded-[32px] bg-white p-5 sm:p-7 shadow-2xl space-y-4 relative border border-slate-100 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowProfileModal(false)}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"

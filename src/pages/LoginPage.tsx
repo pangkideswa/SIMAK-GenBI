@@ -15,6 +15,7 @@ import {
   Moon,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { DEFAULT_ROSTER_60 } from '../lib/defaultRoster';
 import { verifyUserPinAsync } from '../lib/authSecurity';
 import { sanitizeMemberIdentity } from '../lib/attendanceSync';
 import { checkRateLimit, recordFailedAttempt, resetRateLimit } from '../lib/rateLimiter';
@@ -342,6 +343,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         (pin === 'genbi123' || pin.length >= 6);
       const isDemoKadiv = emailToLogin === '2214100010' && (pin === 'genbi123' || pin.length >= 6);
       const isDemoMember = emailToLogin === '2214100048' && (pin === 'genbi123' || pin.length >= 6);
+      const matchedSeedMember = DEFAULT_ROSTER_60.find(
+        (m) => (m.npm === emailToLogin || m.email.toLowerCase() === emailToLogin.toLowerCase()) && (pin === 'genbi123' || pin.length >= 6)
+      );
 
       // Jika input berupa NPM (tidak mengandung @)
       if (!emailToLogin.includes('@')) {
@@ -363,13 +367,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         }
 
         if (!resolvedEmail) {
-          if (isDemoAdmin || isDemoKadiv || isDemoMember) {
+          if (isDemoAdmin || isDemoKadiv || isDemoMember || matchedSeedMember) {
             emailToLogin =
               emailToLogin === '2414101078'
                 ? 'admin@genbi-unma.ac.id'
                 : emailToLogin === '2214100010'
                 ? 'deden@genbi-unma.ac.id'
-                : 'fahmi@genbi-unma.ac.id';
+                : emailToLogin === '2214100048'
+                ? 'fahmi@genbi-unma.ac.id'
+                : matchedSeedMember!.email;
           } else {
             throw new Error('NPM tidak ditemukan. Silakan gunakan Email atau lakukan Aktivasi Akun.');
           }
@@ -431,6 +437,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               fullName: ov?.full_name || 'Muhamad Fahmi',
               division: ov?.division || 'Publikasi dan Sosialisasi',
               role: ov?.role || 'member',
+            })
+          );
+          return;
+        } else if (matchedSeedMember) {
+          const ov = localOverrides[matchedSeedMember.npm];
+          onLoginSuccess(
+            sanitizeMemberIdentity({
+              id: matchedSeedMember.user_id,
+              npm: matchedSeedMember.npm,
+              nim: matchedSeedMember.nim,
+              fullName: ov?.full_name || matchedSeedMember.full_name,
+              division: ov?.division || matchedSeedMember.division,
+              role: ov?.role || matchedSeedMember.role,
             })
           );
           return;

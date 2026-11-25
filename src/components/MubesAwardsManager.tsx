@@ -378,7 +378,7 @@ export const MubesAwardsManager: React.FC<MubesAwardsManagerProps> = ({
       {/* Modal Dialog Edit / Tetapkan Pemenang */}
       {editingCategory && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-5 sm:p-6 shadow-2xl space-y-4 relative border border-slate-100 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setEditingCategory(null)}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"

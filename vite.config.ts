@@ -217,7 +217,7 @@ function mubesAwardsSyncPlugin() {
               const targetNpm = String(payload.npm || payload.nim || payload.user_id || '').trim().toLowerCase();
               if (targetNpm) {
                 if (typeof payload.total_points === 'number') {
-                  payload.total_points = Math.min(100, Math.max(0, payload.total_points));
+                  payload.total_points = Math.max(0, payload.total_points);
                 }
                 const rawName = String(payload.full_name || payload.fullName || '').toLowerCase();
                 if (rawName.includes('pangki') || targetNpm === '2414101078') {

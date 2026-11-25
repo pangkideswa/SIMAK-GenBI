@@ -87,7 +87,7 @@ export async function updateMemberPointsDirectly(
     return { success: false, message: 'NPM / User ID tidak valid.' };
   }
 
-  const cappedPoints = Math.min(100, Math.max(0, Number(newTotalPoints)));
+  const cappedPoints = Math.max(0, Number(newTotalPoints));
   const nextPredicate = cappedPoints >= 80 ? 'Sangat Aktif' : cappedPoints >= 60 ? 'Aktif' : 'Perlu Pembinaan';
 
   try {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   LogOut,
   Calendar,
@@ -36,9 +36,14 @@ import {
   AlertCircle,
   Info,
   CheckCircle2,
+  Camera,
+  RefreshCw,
+  ImagePlus,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { supabase } from '../lib/supabase';
+import { DEFAULT_ROSTER_60, DEFAULT_SEEDED_ATTENDANCES_60, DEFAULT_EVALUATIONS_60 } from '../lib/defaultRoster';
 import { syncMemberUpdate, normalizeStudentId } from '../lib/memberSync';
 import { formatDateTimeWIB, toDatetimeLocalWIB } from '../lib/dateUtils';
 import { WibDateTimePicker } from '../components/WibDateTimePicker';
@@ -76,6 +81,7 @@ import {
 } from '../lib/leaderboardPublish';
 import {
   recordUnifiedAttendance,
+  recordBphKeaktifanBonus,
   applyEvaluationsOverrides,
   sanitizeMemberIdentity,
   resolveAvatarUrl,
@@ -210,104 +216,7 @@ const DEFAULT_SAMPLE_EVENTS: EventType[] = [
   },
 ];
 
-const DEFAULT_SAMPLE_LEADERBOARD: MemberEvaluation[] = [
-  {
-    user_id: 'a1111111-1111-1111-1111-111111111111',
-    npm: '2414101078',
-    nim: '2414101078',
-    email: 'admin@genbi-unma.ac.id',
-    full_name: 'Ahmad Fauzi',
-    division: 'Pengabdian Masyarakat',
-    role: 'member',
-    avatar_url: null,
-    total_points: 95,
-    total_hadir: 7,
-    total_izin: 0,
-    total_alfa: 0,
-    attendance_percentage: 100.0,
-    predicate: 'Sangat Aktif',
-  },
-  {
-    user_id: 'b2222222-2222-2222-2222-222222222222',
-    npm: '2214100010',
-    nim: '2214100010',
-    email: 'deden@genbi-unma.ac.id',
-    full_name: 'Deden Kurniawan',
-    division: 'Publikasi dan Sosialisasi',
-    role: 'kadiv',
-    avatar_url: null,
-    total_points: 85,
-    total_hadir: 6,
-    total_izin: 1,
-    total_alfa: 0,
-    attendance_percentage: 85.7,
-    predicate: 'Sangat Aktif',
-  },
-  {
-    user_id: 'sample-3',
-    npm: '2214100025',
-    nim: '2214100025',
-    email: 'siti@genbi-unma.ac.id',
-    full_name: 'Siti Rahmawati',
-    division: 'Pendidikan',
-    role: 'kadiv',
-    avatar_url: null,
-    total_points: 75,
-    total_hadir: 5,
-    total_izin: 1,
-    total_alfa: 0,
-    attendance_percentage: 71.4,
-    predicate: 'Aktif',
-  },
-  {
-    user_id: 'sample-4',
-    npm: '2214100033',
-    nim: '2214100033',
-    email: 'fajar@genbi-unma.ac.id',
-    full_name: 'Fajar Pratama',
-    division: 'Lingkungan Hidup',
-    role: 'kadiv',
-    avatar_url: null,
-    total_points: 70,
-    total_hadir: 5,
-    total_izin: 0,
-    total_alfa: 1,
-    attendance_percentage: 71.4,
-    predicate: 'Aktif',
-  },
-  {
-    user_id: 'c3333333-3333-3333-3333-333333333333',
-    npm: '2214100048',
-    nim: '2214100048',
-    email: 'fahmi@genbi-unma.ac.id',
-    full_name: 'Muhamad Fahmi',
-    division: 'Publikasi dan Sosialisasi',
-    role: 'member',
-    avatar_url: null,
-    total_points: 60,
-    total_hadir: 4,
-    total_izin: 2,
-    total_alfa: 0,
-    attendance_percentage: 57.1,
-    predicate: 'Aktif',
-  },
-  {
-    user_id: 'sample-6',
-    npm: '2214100052',
-    nim: '2214100052',
-    email: 'rizky@genbi-unma.ac.id',
-    full_name: 'Rizky Ramadhan',
-    division: 'Kewirausahaan',
-    role: 'member',
-    avatar_url: null,
-    total_points: 40,
-    total_hadir: 3,
-    total_izin: 1,
-    total_alfa: 2,
-    attendance_percentage: 42.9,
-    predicate: 'Perlu Pembinaan',
-  },
-];
+const DEFAULT_SAMPLE_LEADERBOARD: MemberEvaluation[] = DEFAULT_EVALUATIONS_60;
 
 const DEFAULT_SAMPLE_WHITELIST: Array<{
   npm: string;
@@ -317,15 +226,15 @@ const DEFAULT_SAMPLE_WHITELIST: Array<{
   role: Role;
   is_claimed: boolean;
   created_at: string;
-}> = [
-  { npm: '2414101078', nim: '2414101078', full_name: 'Ahmad Fauzi', division: 'Pengabdian Masyarakat', role: 'member', is_claimed: true, created_at: new Date().toISOString() },
-  { npm: '2214100010', nim: '2214100010', full_name: 'Deden Kurniawan', division: 'Publikasi dan Sosialisasi', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
-  { npm: '2214100025', nim: '2214100025', full_name: 'Siti Rahmawati', division: 'Pendidikan', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
-  { npm: '2214100033', nim: '2214100033', full_name: 'Fajar Pratama', division: 'Lingkungan Hidup', role: 'kadiv', is_claimed: true, created_at: new Date().toISOString() },
-  { npm: '2214100048', nim: '2214100048', full_name: 'Muhamad Fahmi', division: 'Publikasi dan Sosialisasi', role: 'member', is_claimed: true, created_at: new Date().toISOString() },
-  { npm: '2214100052', nim: '2214100052', full_name: 'Rizky Ramadhan', division: 'Kewirausahaan', role: 'member', is_claimed: false, created_at: new Date().toISOString() },
-  { npm: '2214100067', nim: '2214100067', full_name: 'Nadia Putri', division: 'Pengabdian Masyarakat', role: 'member', is_claimed: false, created_at: new Date().toISOString() },
-];
+}> = DEFAULT_ROSTER_60.map((m) => ({
+  npm: m.npm,
+  nim: m.nim,
+  full_name: m.full_name,
+  division: m.division,
+  role: m.role,
+  is_claimed: m.is_claimed,
+  created_at: new Date().toISOString(),
+}));
 
 const DEFAULT_SAMPLE_PENDING_IZIN: PendingAttendance[] = [
   {
@@ -404,6 +313,57 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [showQrModal, setShowQrModal] = useState(false);
   const [isProjectorMode, setIsProjectorMode] = useState(false);
   const [activeQrEvent, setActiveQrEvent] = useState<EventType | null>(null);
+  const [qrModalMode, setQrModalMode] = useState<'display' | 'scan-id'>('display');
+  const [bphCameraFacing, setBphCameraFacing] = useState<'environment' | 'user'>('environment');
+  const [bphScannerActive, setBphScannerActive] = useState(false);
+  const [isScanningBphImage, setIsScanningBphImage] = useState(false);
+  const [bphScanResult, setBphScanResult] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
+  const bphScannerRef = useRef<Html5Qrcode | null>(null);
+  const bphQrImageInputRef = useRef<HTMLInputElement | null>(null);
+  const isProcessingBphScanRef = useRef<boolean>(false);
+  const lastBphScanRef = useRef<{ value: string; at: number }>({ value: '', at: 0 });
+  const scannedMemberEventsRef = useRef<Set<string>>(new Set());
+  const processBphScanLatestRef = useRef<(rawDecoded: string) => void>(() => {});
+
+  // Modal Tambah Nilai Keaktifan oleh BPH (Grup WA / Kontribusi / Inisiatif)
+  const [showBonusPointsModal, setShowBonusPointsModal] = useState(false);
+  const [bonusTargetMember, setBonusTargetMember] = useState<MemberEvaluation | null>(null);
+  const [bonusCategory, setBonusCategory] = useState('Komunikasi Grup WA');
+  const [bonusPoints, setBonusPoints] = useState<number>(10);
+  const [bonusNote, setBonusNote] = useState('');
+  const [isSavingBonus, setIsSavingBonus] = useState(false);
+
+  const handleSubmitBonusPoints = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bonusTargetMember) return;
+    setIsSavingBonus(true);
+    try {
+      await recordBphKeaktifanBonus({
+        userId: bonusTargetMember.user_id,
+        npm: bonusTargetMember.npm || bonusTargetMember.nim || '',
+        fullName: bonusTargetMember.full_name,
+        division: bonusTargetMember.division,
+        role: bonusTargetMember.role || 'member',
+        category: bonusCategory,
+        points: Number(bonusPoints || 0),
+        note: bonusNote,
+      });
+      showToast(
+        `Nilai keaktifan ${bonusTargetMember.full_name} berhasil diperbarui (${bonusPoints >= 0 ? '+' : ''}${bonusPoints} Poin).`,
+        'success'
+      );
+      setShowBonusPointsModal(false);
+      setBonusTargetMember(null);
+      loadAdminData();
+    } catch {
+      showToast('Gagal menyimpan penilaian keaktifan.', 'error');
+    } finally {
+      setIsSavingBonus(false);
+    }
+  };
 
   // Form Buat Event Baru
   const [newTitle, setNewTitle] = useState('');
@@ -535,7 +495,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         }
       }
       const validEvents = mergedEvents.filter((ev: any) => ev.category !== 'mubes-system');
-      setEvents(filterDeletedEvents(validEvents as EventType[]));
+      const finalActiveEvents = filterDeletedEvents(validEvents as EventType[]);
+      setEvents(finalActiveEvents);
 
       // 2. Ambil Rekap Keaktifan Seluruh Anggota (Terpadu Supabase + Overrides Permanen + Cloud API)
       const cloudEvals = await fetchEvaluationsCloud();
@@ -544,12 +505,143 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         .select('*')
         .order('total_points', { ascending: false });
 
-      const baseEvals = (evalData && evalData.length > 0)
-        ? (evalData as MemberEvaluation[])
-        : (cloudEvals && cloudEvals.length > 0)
-        ? (cloudEvals as MemberEvaluation[])
-        : DEFAULT_SAMPLE_LEADERBOARD;
-      setEvaluations(applyEvaluationsOverrides(baseEvals).filter((m) => !isSuperAdminAccount(m)).map((m) => sanitizeMemberIdentity(m)));
+      const evalMap = new Map<string, MemberEvaluation>();
+      for (const item of DEFAULT_SAMPLE_LEADERBOARD) {
+        const key = normalizeStudentId(item.npm || item.nim) || item.user_id;
+        if (key) evalMap.set(key, item);
+      }
+      if (cloudEvals && cloudEvals.length > 0) {
+        for (const item of cloudEvals as MemberEvaluation[]) {
+          const key = normalizeStudentId(item.npm || item.nim) || item.user_id;
+          if (key) evalMap.set(key, { ...(evalMap.get(key) || {}), ...item });
+        }
+      }
+      if (evalData && evalData.length > 0) {
+        for (const item of evalData as MemberEvaluation[]) {
+          const key = normalizeStudentId(item.npm || item.nim) || item.user_id;
+          if (key) evalMap.set(key, { ...(evalMap.get(key) || {}), ...item });
+        }
+      }
+      const baseEvals = Array.from(evalMap.values());
+
+      // Rekonsiliasi Poin, Hadir, Izin, Alfa & Persentase Kehadiran seluruh user terhadap agenda aktif & catatan presensi nyata
+      let localAllAtt: any[] = [];
+      try {
+        const rawAll = localStorage.getItem('simak_all_attendances');
+        if (rawAll) localAllAtt = filterDeletedAttendances(JSON.parse(rawAll));
+      } catch {}
+
+      try {
+        const { data: supaAtts } = await supabase
+          .from('attendances')
+          .select('id, user_id, event_id, status, verified, scanned_at');
+        if (supaAtts && supaAtts.length > 0) {
+          for (const sa of supaAtts as any[]) {
+            if (!localAllAtt.some((la) => la.id === sa.id || (la.user_id === sa.user_id && la.event_id === sa.event_id))) {
+              localAllAtt.push(sa);
+            }
+          }
+          localAllAtt = filterDeletedAttendances(localAllAtt);
+        }
+      } catch {}
+
+      for (const sa of DEFAULT_SEEDED_ATTENDANCES_60) {
+        const exists = localAllAtt.some(
+          (la) =>
+            la.id === sa.id ||
+            (la.event_id === sa.event_id &&
+              (la.user_id === sa.user_id ||
+                normalizeStudentId(la.npm || la.nim || la.member_npm) === sa.npm))
+        );
+        if (!exists) {
+          localAllAtt.push(sa);
+        }
+      }
+      localAllAtt = filterDeletedAttendances(localAllAtt);
+
+      const eventMap = new Map(finalActiveEvents.map((ev) => [ev.id, ev]));
+      const validEventIds = new Set(finalActiveEvents.map((ev) => ev.id));
+      const totalAgendaCount = Math.max(1, finalActiveEvents.length);
+
+      const reconciledEvals = applyEvaluationsOverrides(baseEvals)
+        .filter((m) => !isSuperAdminAccount(m))
+        .map((rawM) => {
+          const m = sanitizeMemberIdentity(rawM);
+          const cleanNpm = normalizeStudentId(m.npm || m.nim);
+          const allUserAtts = localAllAtt.filter(
+            (a) =>
+              a.user_id === m.user_id ||
+              (cleanNpm && normalizeStudentId(a.npm || a.nim || a.member_npm) === cleanNpm)
+          );
+          const eventAtts = allUserAtts.filter(
+            (a) =>
+              !String(a.event_id || '').startsWith('bph-nilai-') &&
+              (validEventIds.size === 0 || validEventIds.has(a.event_id) || a.status === 'delegasi')
+          );
+          const bonusAtts = allUserAtts.filter((a) => String(a.event_id || '').startsWith('bph-nilai-'));
+
+          if (eventAtts.length > 0 || bonusAtts.length > 0) {
+            const uniqueByEvent = new Map<string, any>();
+            for (const a of eventAtts) {
+              if (!uniqueByEvent.has(a.event_id)) uniqueByEvent.set(a.event_id, a);
+            }
+            let rHadir = 0;
+            let rIzin = 0;
+            let rAlfa = 0;
+            let rPoints = 0;
+            uniqueByEvent.forEach((a) => {
+              if (a.status === 'alfa') {
+                rAlfa += 1;
+              } else if (a.verified) {
+                if (a.status === 'izin') {
+                  rIzin += 1;
+                } else if (a.status === 'hadir' || a.status === 'delegasi') {
+                  rHadir += 1;
+                  const evObj = eventMap.get(a.event_id);
+                  const pts = Number(a.event_points ?? evObj?.points ?? (a.status === 'delegasi' ? 30 : 15));
+                  rPoints += pts;
+                }
+              }
+            });
+            for (const b of bonusAtts) {
+              rPoints += Number(b.event_points ?? 0);
+            }
+            rPoints = Math.max(0, rPoints);
+
+            const rPct =
+              finalActiveEvents.length > 0
+                ? Math.min(100, Math.round((rHadir / totalAgendaCount) * 100))
+                : m.attendance_percentage;
+            const rPred: EvaluationPredicate =
+              rPoints >= 80 && rPct >= 75
+                ? 'Sangat Aktif'
+                : rPoints >= 50 || rPct >= 50
+                ? 'Aktif'
+                : 'Perlu Pembinaan';
+            return {
+              ...m,
+              total_points: rPoints,
+              total_hadir: rHadir,
+              total_izin: rIzin,
+              total_alfa: rAlfa,
+              attendance_percentage: rPct,
+              predicate: rPred,
+            };
+          }
+
+          if (finalActiveEvents.length > 0 && m.total_hadir > finalActiveEvents.length) {
+            const cappedHadir = finalActiveEvents.length;
+            return {
+              ...m,
+              total_hadir: cappedHadir,
+              attendance_percentage: Math.min(100, Math.round((cappedHadir / totalAgendaCount) * 100)),
+            };
+          }
+          return m;
+        })
+        .sort((a, b) => b.total_points - a.total_points);
+
+      setEvaluations(reconciledEvals);
 
       // 3. Ambil Pengajuan Izin & Delegasi Menunggu Verifikasi
       const { data: attData } = await supabase
@@ -778,16 +870,37 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const loadWhitelistMembers = async () => {
     setIsLoadingWhitelist(true);
     try {
+      if (localStorage.getItem('simak_whitelist_cleared_all') === 'true') {
+        setWhitelistMembers([]);
+        setIsLoadingWhitelist(false);
+        return;
+      }
+    } catch {}
+    try {
       let baseList: any[] = [];
       const { data, error } = await (supabase.from('authorized_members') as any)
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!error && data && data.length > 0) {
-        baseList = data;
-      } else {
-        baseList = DEFAULT_SAMPLE_WHITELIST;
+      const combinedMap = new Map<string, any>();
+      for (const d of DEFAULT_SAMPLE_WHITELIST) {
+        const studentId = normalizeStudentId(d.npm || d.nim);
+        if (studentId) combinedMap.set(studentId, d);
       }
+
+      if (!error && data && data.length > 0) {
+        for (const d of data) {
+          const studentId = normalizeStudentId(d.npm || d.nim);
+          if (studentId) {
+            combinedMap.set(studentId, {
+              ...(combinedMap.get(studentId) || {}),
+              ...d,
+            });
+          }
+        }
+      }
+
+      baseList = Array.from(combinedMap.values());
 
       let overrides: Record<string, any> = {};
       try {
@@ -839,6 +952,9 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     }
 
     setIsSavingWhitelist(true);
+    try {
+      localStorage.removeItem('simak_whitelist_cleared_all');
+    } catch {}
     if (user.id.startsWith('demo-')) {
       const newMember = {
         npm: whiteNpm.trim(),
@@ -968,6 +1084,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         }
       }
 
+      try {
+        localStorage.removeItem('simak_whitelist_cleared_all');
+      } catch {}
+
       setWhitelistMembers([...toInsert, ...whitelistMembers]);
       setShowImportCsvModal(false);
       setCsvText('');
@@ -1095,6 +1215,33 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       showToast(`NPM ${identifier} berhasil dihapus dari SK Whitelist.`, 'info');
     } catch (err: any) {
       console.warn('Database note:', err);
+    }
+  };
+
+  // Hapus Semua Anggota dari Whitelist
+  const handleDeleteAllWhitelist = async () => {
+    if (whitelistMembers.length === 0) return;
+    if (!confirm(`Yakin ingin menghapus SEMUA (${whitelistMembers.length}) anggota dari daftar SK Whitelist?`)) return;
+
+    setWhitelistMembers([]);
+    try {
+      localStorage.setItem('simak_whitelist_cleared_all', 'true');
+      localStorage.removeItem('simak_whitelist_overrides');
+    } catch {}
+
+    if (user.id.startsWith('demo-')) {
+      showToast('Semua anggota berhasil dihapus dari SK Whitelist.', 'info');
+      return;
+    }
+
+    try {
+      await (supabase.from('authorized_members') as any)
+        .delete()
+        .neq('npm', '');
+      showToast('Semua anggota berhasil dihapus dari SK Whitelist.', 'info');
+    } catch (err: any) {
+      console.warn('Database note:', err);
+      showToast('Semua anggota dihapus dari tampilan whitelist lokal.', 'info');
     }
   };
 
@@ -1285,12 +1432,53 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setIsLoadingParticipants(true);
     setParticipants([]);
 
+    const appendLocalAndSeeded = (baseList: EventParticipant[]): EventParticipant[] => {
+      const merged = [...baseList];
+      try {
+        const localAll = localStorage.getItem('simak_all_attendances');
+        if (localAll) {
+          const parsed = JSON.parse(localAll);
+          for (const p of parsed) {
+            if (p.event_id !== eventItem.id) continue;
+            const pNpm = normalizeStudentId(p.npm || p.nim || p.member_npm);
+            const exists = merged.some(
+              (e) => e.user_id === p.user_id || (pNpm && normalizeStudentId(e.npm || e.nim) === pNpm)
+            );
+            if (!exists) merged.push(p);
+          }
+        }
+      } catch {}
+
+      for (const sa of DEFAULT_SEEDED_ATTENDANCES_60) {
+        if (sa.event_id !== eventItem.id) continue;
+        const exists = merged.some(
+          (e) => e.user_id === sa.user_id || normalizeStudentId(e.npm || e.nim) === sa.npm
+        );
+        if (!exists) {
+          merged.push({
+            id: sa.id,
+            user_id: sa.user_id,
+            status: sa.status,
+            verified: sa.verified,
+            scanned_at: sa.scanned_at,
+            full_name: sa.full_name,
+            npm: sa.npm,
+            nim: sa.nim,
+            division: sa.division,
+          });
+        }
+      }
+
+      return filterDeletedAttendances(merged).map((p) => sanitizeMemberIdentity(p) as EventParticipant);
+    };
+
     try {
       const { data: attList } = await supabase
         .from('attendances')
         .select('id, user_id, status, verified, scanned_at')
         .eq('event_id', eventItem.id);
 
+      let enrichedList: EventParticipant[] = [];
       if (attList && attList.length > 0) {
         const userIds = attList.map((a: any) => a.user_id);
         const { data: userProfiles } = await supabase
@@ -1300,7 +1488,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
         const userMap = new Map((userProfiles || []).map((u: any) => [u.id, u]));
 
-        const enrichedList: EventParticipant[] = attList.map((a: any) => {
+        enrichedList = attList.map((a: any) => {
           const u: any = userMap.get(a.user_id);
           const studentId = u?.npm || u?.nim || '-';
           return {
@@ -1315,50 +1503,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             division: u?.division || '-',
           };
         });
-
-        // Gabungkan juga dengan data presensi lokal (jika ada)
-        try {
-          const localAll = localStorage.getItem('simak_all_attendances');
-          if (localAll) {
-            const parsed = JSON.parse(localAll);
-            const matched = parsed.filter(
-              (p: any) => p.event_id === eventItem.id && !enrichedList.some((e) => e.user_id === p.user_id)
-            );
-            if (matched.length > 0) {
-              enrichedList.push(...matched);
-            }
-          }
-        } catch {}
-
-        setParticipants(filterDeletedAttendances(enrichedList).map((p) => sanitizeMemberIdentity(p) as EventParticipant));
-      } else {
-        // Fallback: periksa cache lokal bersama jika Supabase belum ada data
-        try {
-          const localAll = localStorage.getItem('simak_all_attendances');
-          if (localAll) {
-            const parsed = JSON.parse(localAll);
-            const matched = parsed.filter((p: any) => p.event_id === eventItem.id);
-            if (matched.length > 0) {
-              setParticipants(filterDeletedAttendances(matched).map((p) => sanitizeMemberIdentity(p) as EventParticipant));
-              return;
-            }
-          }
-        } catch {}
-        setParticipants([]);
       }
+
+      setParticipants(appendLocalAndSeeded(enrichedList));
     } catch {
-      try {
-        const localAll = localStorage.getItem('simak_all_attendances');
-        if (localAll) {
-          const parsed = JSON.parse(localAll);
-          const matched = parsed.filter((p: any) => p.event_id === eventItem.id);
-          if (matched.length > 0) {
-            setParticipants(filterDeletedAttendances(matched).map((p) => sanitizeMemberIdentity(p) as EventParticipant));
-            return;
-          }
-        }
-      } catch {}
-      setParticipants([]);
+      setParticipants(appendLocalAndSeeded([]));
     } finally {
       setIsLoadingParticipants(false);
     }
@@ -1873,6 +2022,297 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setIsSubmittingManualAtt(false);
     }
   };
+
+  // Handler Scanner QR ID Card Anggota di Panel BPH (2 Arah / Anti Titip Absen)
+  const stopBphScanner = async () => {
+    if (bphScannerRef.current) {
+      try {
+        const state = bphScannerRef.current.getState();
+        if (state === 2 || state === 3) {
+          await bphScannerRef.current.stop();
+        }
+        bphScannerRef.current.clear();
+      } catch {}
+      bphScannerRef.current = null;
+    }
+    setBphScannerActive(false);
+  };
+
+  const handleProcessBphIdCardScan = async (rawDecoded: string) => {
+    if (!activeQrEvent || isProcessingBphScanRef.current) return;
+    const trimmed = String(rawDecoded || '').trim();
+    if (!trimmed) return;
+
+    const now = Date.now();
+    if (lastBphScanRef.current.value === trimmed && now - lastBphScanRef.current.at < 3500) {
+      return;
+    }
+    lastBphScanRef.current = { value: trimmed, at: now };
+    isProcessingBphScanRef.current = true;
+
+    try {
+      let scannedUserId = '';
+      let scannedNpm = '';
+      let scannedDivision = '';
+
+      if (trimmed.startsWith('GENBI-MEMBER:')) {
+        const parts = trimmed.split(':');
+        scannedUserId = parts[1] || '';
+        scannedNpm = normalizeStudentId(parts[2] || '');
+        scannedDivision = parts.slice(3).join(':') || '';
+      } else {
+        scannedNpm = normalizeStudentId(trimmed);
+      }
+
+      if (!scannedNpm && !scannedUserId) {
+        setBphScanResult({
+          type: 'error',
+          message: 'QR tidak dikenali. Pastikan yang dipindai adalah QR pada Kartu ID Digital anggota GenBI.',
+        });
+        return;
+      }
+
+      // Cari identitas resmi anggota
+      const matchedWl = whitelistMembers.find(
+        (w) => normalizeStudentId(w.npm || w.nim) === scannedNpm
+      );
+      const matchedEval = evaluations.find(
+        (ev) =>
+          (scannedNpm && normalizeStudentId(ev.npm || ev.nim) === scannedNpm) ||
+          (scannedUserId && ev.user_id === scannedUserId)
+      );
+
+      let resolvedUserId = scannedUserId || matchedEval?.user_id || '';
+      let resolvedName = matchedWl?.full_name || matchedEval?.full_name || '';
+      let resolvedNpm = scannedNpm || normalizeStudentId(matchedEval?.npm || matchedEval?.nim || '');
+      let resolvedDiv = scannedDivision || matchedWl?.division || matchedEval?.division || 'Publikasi dan Sosialisasi';
+      let resolvedRole = matchedWl?.role || 'member';
+
+      if (!resolvedName || !resolvedUserId) {
+        try {
+          const { data: profData } = await supabase
+            .from('profiles')
+            .select('id, full_name, npm, nim, division, role')
+            .or(resolvedNpm ? `npm.eq.${resolvedNpm},nim.eq.${resolvedNpm}` : `id.eq.${resolvedUserId}`)
+            .maybeSingle();
+          if (profData) {
+            const safeProf = sanitizeMemberIdentity(profData as any);
+            resolvedUserId = safeProf.id || resolvedUserId;
+            resolvedName = safeProf.full_name || resolvedName;
+            resolvedNpm = normalizeStudentId(safeProf.npm || safeProf.nim || resolvedNpm);
+            resolvedDiv = safeProf.division || resolvedDiv;
+            resolvedRole = safeProf.role || resolvedRole;
+          }
+        } catch {}
+      }
+
+      const safeIdentity = sanitizeMemberIdentity({
+        id: resolvedUserId || `member-${resolvedNpm}`,
+        user_id: resolvedUserId || `member-${resolvedNpm}`,
+        npm: resolvedNpm,
+        nim: resolvedNpm,
+        full_name: resolvedName || `Anggota (${resolvedNpm})`,
+        division: resolvedDiv,
+        role: resolvedRole,
+      });
+
+      const finalUserId = safeIdentity.user_id;
+      const finalName = safeIdentity.full_name;
+      const finalNpm = normalizeStudentId(safeIdentity.npm);
+
+      if (!finalNpm) {
+        setBphScanResult({
+          type: 'error',
+          message: 'Data NPM anggota tidak ditemukan di dalam QR Code.',
+        });
+        return;
+      }
+
+      // Cek duplikasi presensi secara ketat (in-memory session + localStorage + Supabase)
+      const sessionScanKey = `${activeQrEvent.id}:${finalNpm}`;
+      let alreadyAttended = scannedMemberEventsRef.current.has(sessionScanKey);
+
+      if (!alreadyAttended) {
+        try {
+          const rawAll = localStorage.getItem('simak_all_attendances');
+          if (rawAll) {
+            const parsed = filterDeletedAttendances(JSON.parse(rawAll));
+            alreadyAttended = parsed.some(
+              (a: any) =>
+                a.event_id === activeQrEvent.id &&
+                (normalizeStudentId(a.npm || a.nim || a.member_npm) === finalNpm ||
+                  (finalUserId && a.user_id === finalUserId))
+            );
+          }
+          if (!alreadyAttended) {
+            const checkKeys = [`simak_attendances_${finalNpm}`];
+            if (finalUserId) checkKeys.push(`simak_attendances_${finalUserId}`);
+            for (const ck of checkKeys) {
+              const rawU = localStorage.getItem(ck);
+              if (rawU && filterDeletedAttendances(JSON.parse(rawU)).some((a: any) => a.event_id === activeQrEvent.id)) {
+                alreadyAttended = true;
+                break;
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (!alreadyAttended && finalUserId && /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(finalUserId)) {
+        try {
+          const { data: existingSupa } = await supabase
+            .from('attendances')
+            .select('id')
+            .eq('event_id', activeQrEvent.id)
+            .eq('user_id', finalUserId)
+            .maybeSingle();
+          if (existingSupa) alreadyAttended = true;
+        } catch {}
+      }
+
+      if (alreadyAttended) {
+        scannedMemberEventsRef.current.add(sessionScanKey);
+        setBphScanResult({
+          type: 'info',
+          message: `${finalName} (${finalNpm}) sudah tercatat hadir di kegiatan ini.`,
+        });
+        return;
+      }
+
+      // Kunci di memory SEBELUM await agar frame kamera berikutnya tidak bisa masuk ganda
+      scannedMemberEventsRef.current.add(sessionScanKey);
+
+      await recordUnifiedAttendance({
+        eventId: activeQrEvent.id,
+        userId: finalUserId,
+        userFullName: finalName,
+        userNpm: finalNpm,
+        userDivision: safeIdentity.division,
+        userRole: safeIdentity.role,
+        eventTitle: activeQrEvent.title,
+        eventPoints: activeQrEvent.points || 15,
+        eventCategory: activeQrEvent.category,
+        eventDate: activeQrEvent.event_date,
+        status: 'hadir',
+        verified: true,
+      });
+
+      setBphScanResult({
+        type: 'success',
+        message: `${finalName} (${finalNpm}) berhasil dicatat hadir (+${activeQrEvent.points || 15} Poin)!`,
+      });
+      showToast(`Presensi ${finalName} tercatat (+${activeQrEvent.points || 15} Poin)`, 'success');
+      loadAdminData();
+    } catch (err: any) {
+      setBphScanResult({
+        type: 'error',
+        message: err?.message || 'Gagal mencatat presensi dari ID Card.',
+      });
+    } finally {
+      setTimeout(() => {
+        isProcessingBphScanRef.current = false;
+      }, 1800);
+    }
+  };
+
+  processBphScanLatestRef.current = handleProcessBphIdCardScan;
+
+  const handleBphScanImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setIsScanningBphImage(true);
+    setBphScanResult(null);
+    try {
+      const html5QrCode = new Html5Qrcode('bph-id-qr-file-temp');
+      const decodedText = await html5QrCode.scanFile(file, true);
+      html5QrCode.clear();
+      await handleProcessBphIdCardScan(decodedText);
+    } catch {
+      setBphScanResult({
+        type: 'error',
+        message: 'QR Code ID Card tidak terbaca di gambar tersebut. Pastikan QR terlihat jelas.',
+      });
+    } finally {
+      setIsScanningBphImage(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showQrModal || qrModalMode !== 'scan-id' || !activeQrEvent) {
+      stopBphScanner();
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      await stopBphScanner();
+      const container = document.getElementById('bph-id-qr-reader');
+      if (!container) return;
+
+      try {
+        const html5QrCode = new Html5Qrcode('bph-id-qr-reader', {
+          formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+          verbose: false,
+        });
+        bphScannerRef.current = html5QrCode;
+        const scanConfig = {
+          fps: 15,
+          qrbox: (viewWidth: number, viewHeight: number) => {
+            const edge = Math.min(viewWidth, viewHeight);
+            const size = Math.max(160, Math.floor(edge * 0.72));
+            return { width: size, height: size };
+          },
+          aspectRatio: 1.0,
+        };
+
+        try {
+          await html5QrCode.start(
+            { facingMode: bphCameraFacing },
+            scanConfig,
+            (decodedText) => {
+              processBphScanLatestRef.current(decodedText);
+            },
+            () => {}
+          );
+        } catch {
+          const cameras = await Html5Qrcode.getCameras();
+          if (cameras && cameras.length > 0) {
+            const chosenCam =
+              bphCameraFacing === 'environment'
+                ? cameras.find((c) => /back|rear|environment/i.test(c.label)) || cameras[cameras.length - 1]
+                : cameras.find((c) => /front|user/i.test(c.label)) || cameras[0];
+            await html5QrCode.start(
+              chosenCam.id,
+              scanConfig,
+              (decodedText) => {
+                processBphScanLatestRef.current(decodedText);
+              },
+              () => {}
+            );
+          } else {
+            throw new Error('Kamera tidak ditemukan');
+          }
+        }
+        if (!cancelled) setBphScannerActive(true);
+      } catch {
+        if (!cancelled) {
+          setBphScannerActive(false);
+          setBphScanResult({
+            type: 'error',
+            message: 'Kamera tidak dapat diakses. Izinkan akses kamera di browser atau gunakan tombol Pilih Foto ID Card.',
+          });
+        }
+      }
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      stopBphScanner();
+    };
+  }, [showQrModal, qrModalMode, bphCameraFacing, activeQrEvent?.id]);
 
   // Share Agenda ke WhatsApp Broadcast Resmi
   const handleShareWhatsApp = (ev: EventType) => {
@@ -2596,9 +3036,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     <Shield className="w-4 h-4 text-blue-600" />
                     <span>Pengajuan Izin & Delegasi Menunggu Verifikasi ({pendingIzin.length})</span>
                   </h3>
-                  <span className="text-[11px] text-slate-500 font-medium">
-                    Sinkronisasi Realtime Supabase + Cloud Drive
-                  </span>
                 </div>
 
                 {pendingIzin.length === 0 ? (
@@ -2800,7 +3237,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <th className="py-3 px-3 font-bold text-center">Alfa</th>
                           <th className="py-3 px-3 font-bold text-right">Poin</th>
                           <th className="py-3 px-3.5 font-bold text-center">Predikat</th>
-                          <th className="py-3 px-3 font-bold text-center">Rapor BI</th>
+                          <th className="py-3 px-3 font-bold text-center">Aksi</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -2858,15 +3295,32 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                 </span>
                               </td>
                               <td className="py-2.5 px-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedReportMember(m)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold border border-blue-200 transition cursor-pointer text-[10px]"
-                                  title="Cetak Rapor Keaktifan & Rekomendasi Beasiswa BI"
-                                >
-                                  <Printer className="w-3 h-3 text-blue-600" />
-                                  <span>Cetak PDF</span>
-                                </button>
+                                <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setBonusTargetMember(m);
+                                      setBonusCategory('Komunikasi Grup WA');
+                                      setBonusPoints(10);
+                                      setBonusNote('');
+                                      setShowBonusPointsModal(true);
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold border border-emerald-200 transition cursor-pointer text-[10px]"
+                                    title="Tambah Nilai Keaktifan (Grup WA / Kontribusi)"
+                                  >
+                                    <Plus className="w-3 h-3 text-emerald-600" />
+                                    <span>Nilai</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedReportMember(m)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold border border-blue-200 transition cursor-pointer text-[10px]"
+                                    title="Cetak Rapor Keaktifan & Rekomendasi Beasiswa BI"
+                                  >
+                                    <Printer className="w-3 h-3 text-blue-600" />
+                                    <span>Cetak PDF</span>
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -2888,20 +3342,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   <div className="flex flex-wrap items-center gap-2 mb-2">
                     {leaderboardPublish.isPublished ? (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-black">
-                        ✓ Terbit ke Anggota
+                        Terbit ke Anggota
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[11px] font-black">
-                        🔒 Dirahasiakan (Draft Internal)
+                        Draft Internal
                       </span>
                     )}
                   </div>
                   <h2 className="text-lg sm:text-2xl font-black text-white tracking-tight">
-                    Klasemen Poin Keaktifan Anggota & BPH
+                    Klasemen Poin Keaktifan Anggota &amp; BPH
                   </h2>
-                  <p className="text-xs text-indigo-200 mt-1 max-w-2xl leading-relaxed">
-                    Peringkat dihitung otomatis secara realtime dari seluruh presensi kehadiran agenda proker, acara wajib, rutin, dan tugas khusus delegasi Bank Indonesia.
-                  </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
@@ -2959,7 +3410,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       return (
                         <div className="order-2 md:order-1 p-5 rounded-3xl bg-white/90 backdrop-blur-md border border-slate-200/80 shadow-md flex flex-col items-center text-center space-y-3 relative overflow-hidden">
                           <div className="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-black uppercase">
-                            🥈 Peringkat #2
+                            Peringkat #2
                           </div>
                           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-slate-200 to-slate-100 ring-4 ring-slate-300 shadow-md flex items-center justify-center text-slate-700 font-black text-xl mt-2 overflow-hidden relative">
                             {p1Avatar ? (
@@ -2984,7 +3435,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <div className="w-full py-2 px-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-around text-xs">
                             <div>
                               <span className="text-[10px] text-slate-400 font-bold block">TOTAL POIN</span>
-                              <span className="font-black text-slate-800 text-sm">{p1.total_points} P</span>
+                              <span className="font-black text-slate-800 text-sm">{p1.total_points} Poin</span>
                             </div>
                             <div className="w-px h-6 bg-slate-200" />
                             <div>
@@ -3012,7 +3463,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500" />
                           <div className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 text-xs font-black uppercase flex items-center gap-1 shadow-xs">
                             <Crown className="w-3.5 h-3.5 fill-slate-950" />
-                            <span>🥇 JUARA #1 TERAKTIF</span>
+                            <span>Peringkat #1</span>
                           </div>
                           <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-400 to-yellow-200 ring-4 ring-amber-300 shadow-lg flex items-center justify-center text-slate-950 font-black text-2xl overflow-hidden relative">
                             {p0Avatar ? (
@@ -3063,7 +3514,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       return (
                         <div className="order-3 p-5 rounded-3xl bg-white/90 backdrop-blur-md border border-slate-200/80 shadow-md flex flex-col items-center text-center space-y-3 relative overflow-hidden">
                           <div className="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black uppercase">
-                            🥉 Peringkat #3
+                            Peringkat #3
                           </div>
                           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-200 to-amber-100 ring-4 ring-amber-700/30 shadow-md flex items-center justify-center text-amber-900 font-black text-xl mt-2 overflow-hidden relative">
                             {p2Avatar ? (
@@ -3088,7 +3539,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <div className="w-full py-2 px-3 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-around text-xs">
                           <div>
                             <span className="text-[10px] text-slate-400 font-bold block">TOTAL POIN</span>
-                            <span className="font-black text-slate-800 text-sm">{p2.total_points} P</span>
+                            <span className="font-black text-slate-800 text-sm">{p2.total_points} Poin</span>
                           </div>
                           <div className="w-px h-6 bg-slate-200" />
                           <div>
@@ -3292,7 +3743,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     Hanya anggota yang terdaftar di whitelist ini yang dapat mengaktifkan akun di SIMAK GENBI.
                   </p>
                 </div>
-                <div className="flex items-center gap-2 self-start sm:self-center">
+                <div className="flex flex-wrap items-center gap-2 self-start sm:self-center">
                   <button
                     onClick={() => setShowImportCsvModal(true)}
                     className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md shadow-emerald-600/20 flex items-center gap-1.5 transition cursor-pointer"
@@ -3309,6 +3760,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     <UserPlus className="w-4 h-4" />
                     <span>Tambah 1 Anggota</span>
                   </button>
+
+                  {whitelistMembers.length > 0 && (
+                    <button
+                      onClick={handleDeleteAllWhitelist}
+                      className="px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-black flex items-center gap-1.5 transition cursor-pointer"
+                      title="Hapus semua anggota dari daftar SK Whitelist"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Hapus Semua</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -3459,7 +3921,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       {/* Modal Buat Acara Baru */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100">
+          <div className="w-full max-w-md rounded-[32px] bg-white p-5 sm:p-6 shadow-2xl space-y-4 relative border border-slate-100 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowCreateModal(false)}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
@@ -3586,7 +4048,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       {/* Modal Edit Acara */}
       {showEditEventModal && editingEvent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100">
+          <div className="w-full max-w-md rounded-[32px] bg-white p-5 sm:p-6 shadow-2xl space-y-4 relative border border-slate-100 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => {
                 setShowEditEventModal(false);
@@ -3726,22 +4188,27 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         </div>
       )}
 
-      {/* Modal Tampilkan QR Code Besar Sesi & Mode Proyektor */}
+      {/* Modal Tampilkan QR Code Besar Sesi & Scanner ID Card Anggota */}
       {showQrModal && activeQrEvent && (
         <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in ${isProjectorMode ? 'p-2' : 'p-4'}`}>
-          <div className={`w-full rounded-[36px] bg-white p-6 shadow-2xl space-y-5 text-center relative border border-slate-100 ${isProjectorMode ? 'max-w-2xl p-8' : 'max-w-sm'}`}>
-            <div className="absolute top-4 right-4 flex items-center gap-2">
-              <button
-                onClick={() => setIsProjectorMode(!isProjectorMode)}
-                className="p-2 rounded-full text-slate-400 hover:text-blue-600 hover:bg-slate-100 transition cursor-pointer"
-                title={isProjectorMode ? 'Keluar mode layar penuh' : 'Mode Proyektor Penuh'}
-              >
-                {isProjectorMode ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
-              </button>
+          <div className={`w-full rounded-[36px] bg-white p-5 sm:p-6 shadow-2xl space-y-4 text-center relative border border-slate-100 max-h-[92vh] overflow-y-auto ${isProjectorMode && qrModalMode === 'display' ? 'max-w-2xl sm:p-8' : 'max-w-sm'}`}>
+            <div className="flex items-center justify-end gap-1.5 -mt-1 -mr-1">
+              {qrModalMode === 'display' && (
+                <button
+                  onClick={() => setIsProjectorMode(!isProjectorMode)}
+                  className="hidden sm:inline-flex p-2 rounded-full text-slate-400 hover:text-blue-600 hover:bg-slate-100 transition cursor-pointer"
+                  title={isProjectorMode ? 'Keluar mode layar penuh' : 'Mode Proyektor Penuh'}
+                >
+                  {isProjectorMode ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+                </button>
+              )}
               <button
                 onClick={() => {
+                  stopBphScanner();
                   setShowQrModal(false);
                   setIsProjectorMode(false);
+                  setQrModalMode('display');
+                  setBphScanResult(null);
                 }}
                 className="p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
               >
@@ -3749,11 +4216,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               </button>
             </div>
 
-            <div>
+            <div className="-mt-2">
               <span className="inline-block px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-black mb-1.5">
                 PRESENSI RESMI &bull; {activeQrEvent.category.toUpperCase()}
               </span>
-              <h3 className={`font-black text-slate-900 leading-snug ${isProjectorMode ? 'text-2xl' : 'text-base'}`}>
+              <h3 className={`font-black text-slate-900 leading-snug ${isProjectorMode && qrModalMode === 'display' ? 'text-2xl' : 'text-base'}`}>
                 {activeQrEvent.title}
               </h3>
               <p className="text-xs text-emerald-600 font-extrabold mt-1">
@@ -3761,28 +4228,135 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               </p>
             </div>
 
-            {/* Render QR Besar */}
-            <div className={`mx-auto bg-white p-5 rounded-3xl border-4 border-dashed border-blue-500 flex flex-col items-center justify-center shadow-2xl ${isProjectorMode ? 'w-80 h-80' : 'w-64 h-64'}`}>
-              <QRCodeSVG
-                value={activeQrEvent.qr_token}
-                size={isProjectorMode ? 280 : 220}
-                level="H"
-                includeMargin={false}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
-                Kode Token Sesi Presensi
-              </span>
-              <div className={`font-mono font-black text-slate-900 tracking-widest bg-slate-100 py-1.5 px-4 rounded-xl inline-block border border-slate-200 shadow-inner ${isProjectorMode ? 'text-2xl' : 'text-base'}`}>
-                {activeQrEvent.qr_token}
+            {/* 2 Opsi Mode Presensi BPH */}
+            {!isProjectorMode && (
+              <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-slate-100 border border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQrModalMode('display');
+                    setBphScanResult(null);
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    qrModalMode === 'display'
+                      ? 'bg-white text-blue-700 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>QR Kegiatan</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProjectorMode(false);
+                    setQrModalMode('scan-id');
+                    setBphScanResult(null);
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    qrModalMode === 'scan-id'
+                      ? 'bg-white text-blue-700 shadow-xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Scan ID Card</span>
+                </button>
               </div>
-            </div>
+            )}
 
-            <p className="text-xs text-slate-400 font-medium">
-              Anggota dapat langsung membuka kamera pemindai di aplikasi SIMAK GENBI atau mengetik kode token di atas.
-            </p>
+            {qrModalMode === 'display' ? (
+              <>
+                {/* Render QR Besar */}
+                <div className={`mx-auto bg-white p-4 sm:p-5 rounded-3xl border-4 border-dashed border-blue-500 flex flex-col items-center justify-center shadow-2xl w-full aspect-square ${isProjectorMode ? 'max-w-[320px]' : 'max-w-[248px]'}`}>
+                  <QRCodeSVG
+                    value={activeQrEvent.qr_token}
+                    size={isProjectorMode ? 280 : 220}
+                    level="H"
+                    includeMargin={false}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+                    Kode Token Sesi Presensi
+                  </span>
+                  <div className={`font-mono font-black text-slate-900 tracking-widest bg-slate-100 py-1.5 px-4 rounded-xl inline-block border border-slate-200 shadow-inner ${isProjectorMode ? 'text-2xl' : 'text-base'}`}>
+                    {activeQrEvent.qr_token}
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-400 font-medium">
+                  Anggota dapat langsung membuka kamera pemindai di aplikasi SIMAK GENBI atau mengetik kode token di atas.
+                </p>
+              </>
+            ) : (
+              <div className="space-y-3">
+                {/* Viewfinder Kamera Scanner ID Card Anggota (Persegi 1:1) */}
+                <div className="relative w-full max-w-[270px] aspect-square mx-auto rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-inner flex items-center justify-center">
+                  <div id="bph-id-qr-reader" className="w-full h-full flex items-center justify-center" />
+                  {!bphScannerActive && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 text-xs gap-2 pointer-events-none">
+                      <Camera className="w-7 h-7 text-blue-400 animate-pulse" />
+                      <span>Mengaktifkan kamera scanner...</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBphCameraFacing((prev) => (prev === 'environment' ? 'user' : 'environment'))}
+                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Ganti Kamera</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => bphQrImageInputRef.current?.click()}
+                    disabled={isScanningBphImage}
+                    className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
+                  >
+                    <ImagePlus className="w-3.5 h-3.5" />
+                    <span>{isScanningBphImage ? 'Membaca...' : 'Pilih Foto ID Card'}</span>
+                  </button>
+                  <input
+                    ref={bphQrImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleBphScanImageFile}
+                    className="hidden"
+                  />
+                  <div id="bph-id-qr-file-temp" className="hidden" />
+                </div>
+
+                {bphScanResult && (
+                  <div
+                    className={`p-3 rounded-2xl text-xs font-bold flex items-center gap-2 text-left border ${
+                      bphScanResult.type === 'success'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : bphScanResult.type === 'info'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : 'bg-red-50 text-red-700 border-red-200'
+                    }`}
+                  >
+                    {bphScanResult.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                    ) : bphScanResult.type === 'info' ? (
+                      <Info className="w-4 h-4 shrink-0 text-blue-600" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                    )}
+                    <span>{bphScanResult.message}</span>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-slate-400 font-medium">
+                  Arahkan kamera ke QR Code pada Kartu ID Digital anggota yang hadir langsung di lokasi.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3946,7 +4520,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       {/* Modal Tambah Anggota ke Whitelist SK */}
       {showAddWhitelistModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100">
+          <div className="w-full max-w-md rounded-[32px] bg-white p-5 sm:p-6 shadow-2xl space-y-4 relative border border-slate-100 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowAddWhitelistModal(false)}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
@@ -4084,7 +4658,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       {/* Modal Edit SK Anggota Whitelist */}
       {showEditWhitelistModal && editingWhitelist && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100">
+          <div className="w-full max-w-md rounded-[32px] bg-white p-5 sm:p-6 shadow-2xl space-y-4 relative border border-slate-100 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => {
                 setShowEditWhitelistModal(false);
@@ -4222,7 +4796,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       {/* Modal Import Massal CSV Whitelist */}
       {showImportCsvModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-lg rounded-[32px] bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100">
+          <div className="w-full max-w-lg rounded-[32px] bg-white p-5 sm:p-6 shadow-2xl space-y-4 relative border border-slate-100 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowImportCsvModal(false)}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
@@ -4326,7 +4900,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       {/* Modal Dialog Tolak Izin dengan Alasan */}
       {rejectAttendanceId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="w-full max-w-sm rounded-[32px] bg-white p-6 shadow-2xl space-y-4 relative border border-slate-100 text-left">
+          <div className="w-full max-w-sm rounded-[32px] bg-white p-5 sm:p-6 shadow-2xl space-y-4 relative border border-slate-100 text-left max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setRejectAttendanceId(null)}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
@@ -4397,6 +4971,106 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           participants={selectedEventForPrintAttendance.participants}
           onClose={() => setSelectedEventForPrintAttendance(null)}
         />
+      )}
+
+      {/* Modal Penilaian Keaktifan Tambahan oleh BPH */}
+      {showBonusPointsModal && bonusTargetMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
+          <div className="w-full max-w-sm rounded-[32px] bg-white p-5 sm:p-6 shadow-2xl space-y-4 relative border border-slate-100 max-h-[90vh] overflow-y-auto">
+            <button
+              type="button"
+              onClick={() => {
+                setShowBonusPointsModal(false);
+                setBonusTargetMember(null);
+              }}
+              className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <h3 className="text-base font-black text-slate-900">Nilai Keaktifan Anggota</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {bonusTargetMember.full_name} ({bonusTargetMember.npm || bonusTargetMember.nim}) &bull; Saat ini{' '}
+                <strong className="text-blue-600">{bonusTargetMember.total_points} Poin</strong>
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmitBonusPoints} className="space-y-3.5 text-left">
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-600 uppercase">Kategori Penilaian</label>
+                <select
+                  value={bonusCategory}
+                  onChange={(e) => setBonusCategory(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-600/30"
+                >
+                  <option value="Komunikasi Grup WA">Komunikasi Grup WA</option>
+                  <option value="Kontribusi Kepanitiaan">Kontribusi Kepanitiaan</option>
+                  <option value="Inisiatif & Disiplin">Inisiatif &amp; Disiplin</option>
+                  <option value="Penyesuaian Lainnya">Penyesuaian Lainnya</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-600 uppercase">Poin Tambahan / Penyesuaian</label>
+                <div className="flex items-center gap-1.5">
+                  {[5, 10, 15, -5].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setBonusPoints(val)}
+                      className={`flex-1 py-1.5 rounded-xl text-xs font-black border transition cursor-pointer ${
+                        bonusPoints === val
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      {val > 0 ? `+${val}` : val}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  required
+                  value={bonusPoints}
+                  onChange={(e) => setBonusPoints(Number(e.target.value))}
+                  className="w-full px-3 py-2 text-xs font-bold border border-slate-200 rounded-xl bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600/30"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-600 uppercase">Catatan Singkat (Opsional)</label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Aktif berdiskusi & respon cepat di grup WA"
+                  value={bonusNote}
+                  onChange={(e) => setBonusNote(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-600/30"
+                />
+              </div>
+
+              <div className="pt-1 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBonusPointsModal(false);
+                    setBonusTargetMember(null);
+                  }}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingBonus}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition cursor-pointer disabled:opacity-60"
+                >
+                  {isSavingBonus ? 'Menyimpan...' : 'Simpan Nilai'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
     </div>

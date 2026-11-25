@@ -376,9 +376,33 @@ export async function recordUnifiedAttendance(
   }
 
   // 1. Simpan ke simak_all_attendances (Shared Global Cache)
+  // 1. Cek apakah sudah pernah tercatat hadir pada acara ini (mencegah penambahan poin ganda / multi-scan)
+  let alreadyExistedForEvent = false;
   try {
+    const rawDel = localStorage.getItem('simak_deleted_attendances');
+    const deletedIds = new Set<string>(rawDel ? JSON.parse(rawDel) : []);
     const rawAll = localStorage.getItem(ALL_ATTENDANCES_KEY);
     const allList: any[] = rawAll ? JSON.parse(rawAll) : [];
+    alreadyExistedForEvent = allList.some(
+      (a: any) =>
+        !deletedIds.has(a.id) &&
+        a.event_id === input.eventId &&
+        (a.user_id === input.userId || (cleanNpm && normalizeStudentId(a.npm || a.nim) === cleanNpm))
+    );
+    if (!alreadyExistedForEvent) {
+      const checkKeys = [`simak_attendances_${input.userId}`];
+      if (cleanNpm && cleanNpm !== input.userId) checkKeys.push(`simak_attendances_${cleanNpm}`);
+      for (const ck of checkKeys) {
+        const rawU = localStorage.getItem(ck);
+        if (rawU) {
+          const uList: any[] = JSON.parse(rawU);
+          if (uList.some((a: any) => !deletedIds.has(a.id) && a.event_id === input.eventId)) {
+            alreadyExistedForEvent = true;
+            break;
+          }
+        }
+      }
+    }
     // Hapus presensi duplikat jika ada untuk acara & user yang sama
     const filteredAll = allList.filter(
       (a) =>
@@ -442,9 +466,13 @@ export async function recordUnifiedAttendance(
 
     const prevPoints = Number(currentEval?.total_points ?? (input.userRole === 'admin' ? 95 : input.userRole === 'kadiv' ? 85 : 60));
     const prevHadir = Number(currentEval?.total_hadir ?? (input.userRole === 'admin' ? 7 : input.userRole === 'kadiv' ? 6 : 4));
-    // Poin maksimal dalam SIMAK GENBI adalah 100 (skala 0 - 100)
-    const nextPoints = Math.min(100, Math.max(0, prevPoints + attRecord.event_points));
-    const nextHadir = Math.min(10, prevHadir + 1);
+    // Poin keaktifan bersifat unlimited (terus bertambah melewati 100 sepanjang periode)
+    const nextPoints = alreadyExistedForEvent
+      ? prevPoints
+      : Math.max(0, prevPoints + attRecord.event_points);
+    const nextHadir = alreadyExistedForEvent ? prevHadir : prevHadir + 1;
+    const totalIzin = Number(currentEval?.total_izin ?? 0);
+    const totalAlfa = Number(currentEval?.total_alfa ?? 0);
     const nextPredicate: EvaluationPredicate =
       nextPoints >= 80 ? 'Sangat Aktif' : nextPoints >= 60 ? 'Aktif' : 'Perlu Pembinaan';
 
@@ -459,9 +487,9 @@ export async function recordUnifiedAttendance(
       avatar_url: currentEval?.avatar_url || null,
       total_points: nextPoints,
       total_hadir: nextHadir,
-      total_izin: Number(currentEval?.total_izin ?? 0),
-      total_alfa: Number(currentEval?.total_alfa ?? 0),
-      attendance_percentage: Math.min(100, Math.round((nextHadir / Math.max(1, 7)) * 100)),
+      total_izin: totalIzin,
+      total_alfa: totalAlfa,
+      attendance_percentage: Math.min(100, Math.round((nextHadir / Math.max(1, nextHadir + totalIzin + totalAlfa)) * 100)),
       predicate: nextPredicate,
     };
 
@@ -945,8 +973,8 @@ export async function approveAttendanceSync(
         }
 
         const prevPoints = Number(currentEval?.total_points ?? 60);
-        // Skala poin maksimal 100
-        const nextPoints = Math.min(100, Math.max(0, prevPoints + addedPoints));
+        // Poin keaktifan unlimited (tidak dibatasi 100)
+        const nextPoints = Math.max(0, prevPoints + addedPoints);
         const nextPredicate: EvaluationPredicate =
           nextPoints >= 80 ? 'Sangat Aktif' : nextPoints >= 60 ? 'Aktif' : 'Perlu Pembinaan';
 
@@ -1002,6 +1030,137 @@ export async function approveAttendanceSync(
       })
     );
   } catch {}
+}
+
+// Catat Penilaian Keaktifan Tambahan oleh BPH (Grup WA, Kontribusi Panitia, Inisiatif, dll.)
+export async function recordBphKeaktifanBonus(input: {
+  userId: string;
+  npm: string;
+  fullName: string;
+  division: Division;
+  role: Role;
+  category: string;
+  points: number;
+  note?: string;
+}): Promise<MemberEvaluation> {
+  const cleanNpm = normalizeStudentId(input.npm);
+  const userId = input.userId || `member-${cleanNpm}`;
+  const deltaPoints = Number(input.points || 0);
+  const labelTitle = input.note?.trim() ? `${input.category}: ${input.note.trim()}` : input.category;
+
+  // 1. Ambil evaluasi saat ini
+  let currentEval: any = null;
+  try {
+    const rawPersonal = localStorage.getItem(`simak_eval_${userId}`);
+    if (rawPersonal) {
+      currentEval = JSON.parse(rawPersonal);
+    } else {
+      const rawOv = localStorage.getItem(EVALUATIONS_OVERRIDES_KEY);
+      if (rawOv) {
+        const ovMap = JSON.parse(rawOv);
+        currentEval = ovMap[cleanNpm] || ovMap[userId] || null;
+      }
+    }
+  } catch {}
+
+  const prevPoints = Number(currentEval?.total_points ?? 60);
+  const nextPoints = Math.max(0, prevPoints + deltaPoints);
+  const nextPredicate: EvaluationPredicate =
+    nextPoints >= 80 ? 'Sangat Aktif' : nextPoints >= 60 ? 'Aktif' : 'Perlu Pembinaan';
+
+  const updatedEval: MemberEvaluation = sanitizeMemberIdentity({
+    user_id: userId,
+    npm: cleanNpm,
+    nim: cleanNpm,
+    email: currentEval?.email || null,
+    full_name: input.fullName,
+    division: input.division || 'Publikasi dan Sosialisasi',
+    role: input.role || 'member',
+    avatar_url: currentEval?.avatar_url || null,
+    total_points: nextPoints,
+    total_hadir: Number(currentEval?.total_hadir ?? 0),
+    total_izin: Number(currentEval?.total_izin ?? 0),
+    total_alfa: Number(currentEval?.total_alfa ?? 0),
+    attendance_percentage: Number(currentEval?.attendance_percentage ?? 0),
+    predicate: nextPredicate,
+  });
+
+  // 2. Simpan ke localStorage (personal + overrides)
+  try {
+    localStorage.setItem(`simak_eval_${userId}`, JSON.stringify(updatedEval));
+    if (cleanNpm && cleanNpm !== userId) {
+      localStorage.setItem(`simak_eval_${cleanNpm}`, JSON.stringify(updatedEval));
+    }
+
+    let overrides: Record<string, any> = {};
+    const rawOv = localStorage.getItem(EVALUATIONS_OVERRIDES_KEY);
+    if (rawOv) overrides = JSON.parse(rawOv);
+    overrides[userId] = updatedEval;
+    if (cleanNpm) overrides[cleanNpm] = updatedEval;
+    localStorage.setItem(EVALUATIONS_OVERRIDES_KEY, JSON.stringify(overrides));
+  } catch {}
+
+  // 3. Tambahkan ke riwayat personal anggota agar transparan di tab Riwayat
+  try {
+    const bonusRecord = {
+      id: `bph-nilai-${Date.now()}`,
+      event_id: `bph-nilai-${Date.now()}`,
+      status: 'hadir',
+      proof_url: null,
+      verified: true,
+      scanned_at: new Date().toISOString(),
+      event_title: labelTitle,
+      event_points: deltaPoints,
+      event_category: 'Penilaian BPH',
+      event_date: new Date().toISOString(),
+    };
+
+    const userKeys = [`simak_attendances_${userId}`];
+    if (cleanNpm && cleanNpm !== userId) userKeys.push(`simak_attendances_${cleanNpm}`);
+    for (const key of userKeys) {
+      const rawUserAtt = localStorage.getItem(key);
+      const list: any[] = rawUserAtt ? JSON.parse(rawUserAtt) : [];
+      list.unshift(bonusRecord);
+      localStorage.setItem(key, JSON.stringify(list));
+    }
+  } catch {}
+
+  // 4. Sync ke Supabase, Cloud & Mesh
+  try {
+    await (supabase.from('member_evaluations') as any).upsert(
+      {
+        user_id: userId,
+        npm: cleanNpm,
+        nim: cleanNpm,
+        full_name: updatedEval.full_name,
+        division: updatedEval.division,
+        role: updatedEval.role,
+        total_points: updatedEval.total_points,
+        total_hadir: updatedEval.total_hadir,
+        total_izin: updatedEval.total_izin,
+        total_alfa: updatedEval.total_alfa,
+        attendance_percentage: updatedEval.attendance_percentage,
+        predicate: updatedEval.predicate,
+      },
+      { onConflict: 'user_id' }
+    );
+  } catch {}
+
+  saveEvaluationCloud(updatedEval).catch(() => {});
+  broadcastAttendanceRecorded(
+    {
+      id: userId,
+      user_id: userId,
+      npm: cleanNpm,
+      full_name: updatedEval.full_name,
+      division: updatedEval.division,
+      role: updatedEval.role,
+    },
+    updatedEval
+  );
+
+  window.dispatchEvent(new CustomEvent('simak_attendance_sync', { detail: { userId, npm: cleanNpm } }));
+  return updatedEval;
 }
 
 // Jalankan pembersihan cache & foto identitas lama secara otomatis saat modul dimuat di browser

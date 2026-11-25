@@ -31,6 +31,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { DEFAULT_ROSTER_60 } from '../lib/defaultRoster';
 import { Division, Role } from '../types/database';
 import { syncMemberUpdate, normalizeStudentId } from '../lib/memberSync';
 import {
@@ -89,15 +90,17 @@ interface MemberUser {
   source: 'database' | 'whitelist' | 'override';
 }
 
-const DEFAULT_MEMBERS_ROSTER: MemberUser[] = [
-  { npm: '2414101078', nim: '2414101078', fullName: 'Ahmad Fauzi', division: 'Pengabdian Masyarakat', role: 'member', jabatan: 'Anggota', isClaimed: true, email: 'admin@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100010', nim: '2214100010', fullName: 'Deden Kurniawan', division: 'Publikasi dan Sosialisasi', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'deden@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100025', nim: '2214100025', fullName: 'Siti Rahmawati', division: 'Pendidikan', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'siti@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100033', nim: '2214100033', fullName: 'Fajar Pratama', division: 'Lingkungan Hidup', role: 'kadiv', jabatan: 'Kepala Divisi', isClaimed: true, email: 'fajar@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100048', nim: '2214100048', fullName: 'Muhamad Fahmi', division: 'Publikasi dan Sosialisasi', role: 'member', jabatan: 'Anggota', isClaimed: true, email: 'fahmi@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100052', nim: '2214100052', fullName: 'Rizky Ramadhan', division: 'Kewirausahaan', role: 'member', jabatan: 'Anggota', isClaimed: false, email: 'rizky@genbi-unma.ac.id', source: 'whitelist' },
-  { npm: '2214100067', nim: '2214100067', fullName: 'Nadia Putri', division: 'Pengabdian Masyarakat', role: 'member', jabatan: 'Anggota', isClaimed: false, email: 'nadia@genbi-unma.ac.id', source: 'whitelist' },
-];
+const DEFAULT_MEMBERS_ROSTER: MemberUser[] = DEFAULT_ROSTER_60.map((m) => ({
+  npm: m.npm,
+  nim: m.nim,
+  fullName: m.full_name,
+  division: m.division,
+  role: m.role,
+  jabatan: m.jabatan,
+  isClaimed: m.is_claimed,
+  email: m.email,
+  source: 'whitelist',
+}));
 
 export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
   const [activeTab, setActiveTab] = useState<'users' | 'periods' | 'bph-panel' | 'simulator' | 'system' | 'audit' | 'mubes-awards'>('users');
@@ -1406,7 +1409,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
         {/* TAB 2: PANEL OPERASIONAL BPH (EMBEDDED DENGAN PROPS SUPER ADMIN) */}
         {activeTab === 'bph-panel' && (
           <div className="space-y-4 animate-in fade-in duration-200">
-            <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-800/40 text-xs text-indigo-200 flex items-center justify-between">
+            <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-800/40 text-xs text-indigo-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <span className="font-bold flex items-center gap-2">
                 <Shield className="w-4 h-4 text-indigo-400" />
                 <span>Panel Operasional BPH Aktif via Hak Akses Super Admin Root</span>
@@ -1893,7 +1896,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
       {/* MODAL CRUD PERIODE KEPENGURUSAN */}
       {showPeriodModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-blue-500/30 p-6 shadow-2xl space-y-4 relative">
+          <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-blue-500/30 p-5 sm:p-6 shadow-2xl space-y-4 relative max-h-[90vh] overflow-y-auto">
             <div>
               <h3 className="text-base font-black text-white">
                 {editingPeriod ? 'Ubah Rincian Periode Kepengurusan' : 'Buat Periode Kepengurusan Baru'}
@@ -2001,7 +2004,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
       {/* MODAL UBAH HAK AKSES & JABATAN PENGGUNA */}
       {editingMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-blue-500/30 p-6 shadow-2xl space-y-4 relative">
+          <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-blue-500/30 p-5 sm:p-6 shadow-2xl space-y-4 relative max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setEditingMember(null)}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
@@ -2327,7 +2330,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
       {/* MODAL TAMBAH PENERIMA BEASISWA BARU */}
       {showAddMemberModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-emerald-500/30 p-6 shadow-2xl space-y-4 relative">
+          <div className="w-full max-w-md rounded-[32px] bg-slate-900 border border-emerald-500/30 p-5 sm:p-6 shadow-2xl space-y-4 relative max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowAddMemberModal(false)}
               className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
@@ -2433,7 +2436,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
       {/* MODAL PENYESUAIAN POIN ANGGOTA OLEH SUPER ADMIN */}
       {showAdjustPointsModal && adjustTargetMember && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-sm rounded-[32px] bg-slate-900 border border-amber-500/30 p-6 shadow-2xl space-y-4 relative">
+          <div className="w-full max-w-sm rounded-[32px] bg-slate-900 border border-amber-500/30 p-5 sm:p-6 shadow-2xl space-y-4 relative max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => {
                 setShowAdjustPointsModal(false);

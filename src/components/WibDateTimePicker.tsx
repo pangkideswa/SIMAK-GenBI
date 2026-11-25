@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Clock, Calendar as CalendarIcon, Sparkles } from 'lucide-react';
+import { Clock, Calendar as CalendarIcon } from 'lucide-react';
 import { formatDateTimeWIB } from '../lib/dateUtils';
 
 interface WibDateTimePickerProps {
@@ -57,20 +57,6 @@ export const WibDateTimePicker: React.FC<WibDateTimePickerProps> = ({
     updateDateTime(datePart, hourPart, e.target.value);
   };
 
-  const applyPreset = (hour: string, minute: string) => {
-    updateDateTime(datePart, hour, minute);
-  };
-
-  const setNow = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    updateDateTime(`${year}-${month}-${day}`, hours, minutes);
-  };
-
   // Generate 24 hours (00 to 23)
   const hoursList = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
   // Generate 60 minutes (00 to 59)
@@ -83,9 +69,6 @@ export const WibDateTimePicker: React.FC<WibDateTimePickerProps> = ({
           <CalendarIcon className="w-3.5 h-3.5 text-blue-600" />
           <span>{label}</span>
         </label>
-        <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-bold tracking-tight">
-          Format 24 Jam
-        </span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
@@ -140,49 +123,6 @@ export const WibDateTimePicker: React.FC<WibDateTimePickerProps> = ({
             WIB
           </span>
         </div>
-      </div>
-
-      {/* Quick Presets Jam WIB */}
-      <div className="flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
-        <span className="text-[10px] font-bold text-slate-400 flex items-center gap-0.5 mr-1 shrink-0">
-          <Sparkles className="w-2.5 h-2.5 text-amber-500" />
-          <span>Preset:</span>
-        </span>
-        <button
-          type="button"
-          onClick={setNow}
-          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer shrink-0"
-        >
-          Sekarang
-        </button>
-        <button
-          type="button"
-          onClick={() => applyPreset('08', '00')}
-          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer shrink-0"
-        >
-          08:00
-        </button>
-        <button
-          type="button"
-          onClick={() => applyPreset('13', '30')}
-          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer shrink-0"
-        >
-          13:30
-        </button>
-        <button
-          type="button"
-          onClick={() => applyPreset('16', '00')}
-          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer shrink-0"
-        >
-          16:00
-        </button>
-        <button
-          type="button"
-          onClick={() => applyPreset('19', '30')}
-          className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer shrink-0"
-        >
-          19:30
-        </button>
       </div>
 
       {/* Live Preview Format 24 Jam */}
