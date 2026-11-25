@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ShieldCheck, CheckCircle2, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { normalizeStudentId } from '../lib/memberSync';
+import { sanitizeMemberIdentity } from '../lib/attendanceSync';
 import { formatDateLongIndo } from '../lib/dateUtils';
 
 interface DocumentVerificationViewProps {
@@ -47,8 +48,9 @@ export const DocumentVerificationView: React.FC<DocumentVerificationViewProps> =
           .or(`npm.eq.${cleanNpm},nim.eq.${cleanNpm}`)
           .maybeSingle();
 
+        const safeProf = sanitizeMemberIdentity({ npm: cleanNpm, full_name: profData?.full_name });
         // Cek overrides lokal
-        let localName = profData?.full_name;
+        let localName = safeProf?.full_name;
         let localDiv = profData?.division || 'Publikasi dan Sosialisasi';
         let localRole = profData?.role || 'member';
         let localPoints = Number(evalData?.total_points ?? 85);

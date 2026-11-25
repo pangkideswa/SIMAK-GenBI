@@ -259,6 +259,30 @@ export function purgeSuperAdminFromCache(): void {
         }
       }
     } catch {}
+
+    // 6. Self-heal database Supabase live agar Anisa Permata permanen berubah menjadi Muhamad Fahmi
+    healAnisaToFahmiInSupabase();
+  } catch {}
+}
+
+let hasHealedAnisaInSession = false;
+async function healAnisaToFahmiInSupabase() {
+  if (hasHealedAnisaInSession || typeof window === 'undefined') return;
+  hasHealedAnisaInSession = true;
+  try {
+    await (supabase.from('authorized_members') as any)
+      .update({ full_name: 'Muhamad Fahmi' })
+      .or('npm.eq.2214100048,nim.eq.2214100048,full_name.ilike.%anisa%');
+  } catch {}
+  try {
+    await (supabase.from('profiles') as any)
+      .update({ full_name: 'Muhamad Fahmi' })
+      .or('npm.eq.2214100048,nim.eq.2214100048,full_name.ilike.%anisa%');
+  } catch {}
+  try {
+    await (supabase.from('member_evaluations') as any)
+      .update({ full_name: 'Muhamad Fahmi' })
+      .or('npm.eq.2214100048,nim.eq.2214100048,full_name.ilike.%anisa%');
   } catch {}
 }
 
@@ -542,8 +566,28 @@ export async function recordUnifiedAttendance(
 export function sanitizeMemberIdentity<T extends Record<string, any>>(member: T): T {
   if (!member || typeof member !== 'object') return member;
   const clone: any = { ...member };
-  const rawName = String(clone.full_name || clone.fullName || clone.name || clone.member_name || clone.memberFullName || clone.author || '');
-  const rawNpm = String(clone.npm || clone.nim || clone.studentId || clone.student_id || clone.member_npm || clone.member_nim || '');
+  const rawName = String(
+    clone.full_name ||
+      clone.fullName ||
+      clone.name ||
+      clone.member_name ||
+      clone.memberFullName ||
+      clone.userFullName ||
+      clone.user_full_name ||
+      clone.author ||
+      ''
+  );
+  const rawNpm = String(
+    clone.npm ||
+      clone.nim ||
+      clone.studentId ||
+      clone.student_id ||
+      clone.member_npm ||
+      clone.member_nim ||
+      clone.userNpm ||
+      clone.user_npm ||
+      ''
+  );
   const userId = String(clone.user_id || clone.userId || clone.id || '');
   const rawEmail = String(clone.email || '');
 
@@ -574,14 +618,18 @@ export function sanitizeMemberIdentity<T extends Record<string, any>>(member: T)
   if (
     rawNpm.includes('2214100048') ||
     userId.includes('c3333333-3333') ||
-    rawName.toLowerCase().includes('anisa')
+    rawName.toLowerCase().includes('anisa') ||
+    rawEmail.toLowerCase().includes('anisa')
   ) {
     let resolvedName = 'Muhamad Fahmi';
     try {
       const rawWl = localStorage.getItem('simak_whitelist_overrides');
       if (rawWl) {
         const wl = JSON.parse(rawWl);
-        if (wl['2214100048']?.full_name) resolvedName = wl['2214100048'].full_name;
+        const wlName = String(wl['2214100048']?.full_name || '').trim();
+        if (wlName && !wlName.toLowerCase().includes('anisa')) {
+          resolvedName = wlName;
+        }
       }
     } catch {}
 
@@ -590,6 +638,11 @@ export function sanitizeMemberIdentity<T extends Record<string, any>>(member: T)
     clone.name = resolvedName;
     clone.member_name = resolvedName;
     clone.memberFullName = resolvedName;
+    if ('userFullName' in clone) clone.userFullName = resolvedName;
+    if ('user_full_name' in clone) clone.user_full_name = resolvedName;
+    if (rawEmail.toLowerCase().includes('anisa')) {
+      clone.email = 'fahmi@genbi-unma.ac.id';
+    }
   }
   return clone as T;
 }

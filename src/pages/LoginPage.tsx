@@ -270,14 +270,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           if (raw) localOverrides = JSON.parse(raw);
         } catch {}
         const ov = localOverrides['2214100048'];
-        onLoginSuccess({
-          id: 'c3333333-3333-3333-3333-333333333333',
-          npm: '2214100048',
-          nim: '2214100048',
-          fullName: ov?.full_name || 'Muhamad Fahmi',
-          division: ov?.division || 'Publikasi dan Sosialisasi',
-          role: ov?.role || 'member',
-        });
+        onLoginSuccess(
+          sanitizeMemberIdentity({
+            id: 'c3333333-3333-3333-3333-333333333333',
+            npm: '2214100048',
+            nim: '2214100048',
+            fullName: ov?.full_name || 'Muhamad Fahmi',
+            division: ov?.division || 'Publikasi dan Sosialisasi',
+            role: ov?.role || 'member',
+          })
+        );
       }, 150);
     }
   };
@@ -421,14 +423,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           return;
         } else if (isDemoMember) {
           const ov = localOverrides['2214100048'];
-          onLoginSuccess({
-            id: 'c3333333-3333-3333-3333-333333333333',
-            npm: '2214100048',
-            nim: '2214100048',
-            fullName: ov?.full_name || 'Muhamad Fahmi',
-            division: ov?.division || 'Publikasi dan Sosialisasi',
-            role: ov?.role || 'member',
-          });
+          onLoginSuccess(
+            sanitizeMemberIdentity({
+              id: 'c3333333-3333-3333-3333-333333333333',
+              npm: '2214100048',
+              nim: '2214100048',
+              fullName: ov?.full_name || 'Muhamad Fahmi',
+              division: ov?.division || 'Publikasi dan Sosialisasi',
+              role: ov?.role || 'member',
+            })
+          );
           return;
         }
 
