@@ -934,6 +934,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       ) {
         finalFullName = 'Ahmad Fauzi';
         finalAvatar = null;
+      } else if (
+        cleanId === '2214100048' ||
+        finalFullName.toLowerCase().includes('anisa') ||
+        user.id === 'c3333333-3333-3333-3333-333333333333'
+      ) {
+        finalFullName = 'Muhamad Fahmi';
       }
 
       setProfile({

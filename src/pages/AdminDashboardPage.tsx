@@ -1814,9 +1814,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         .or(`npm.eq.${targetNpm},nim.eq.${targetNpm}`)
         .maybeSingle();
 
-      let targetUserId = profData?.id;
-      let targetName = profData?.full_name;
-      let targetDiv = profData?.division || 'Publikasi dan Sosialisasi';
+      const safeProf = profData ? sanitizeMemberIdentity(profData) : null;
+      let targetUserId = safeProf?.id;
+      let targetName = safeProf?.full_name;
+      let targetDiv = safeProf?.division || 'Publikasi dan Sosialisasi';
 
       if (!targetUserId) {
         const { data: authData } = await (supabase.from('authorized_members') as any)
@@ -1825,7 +1826,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           .maybeSingle();
 
         if (authData) {
-          throw new Error(`Anggota ${authData.full_name} (${targetNpm}) belum mengaktifkan akun di SIMAK GENBI. Harap aktivasi akun terlebih dahulu.`);
+          const safeAuth = sanitizeMemberIdentity(authData);
+          throw new Error(`Anggota ${safeAuth.full_name} (${targetNpm}) belum mengaktifkan akun di SIMAK GENBI. Harap aktivasi akun terlebih dahulu.`);
         } else {
           throw new Error(`NPM "${targetNpm}" tidak ditemukan dalam daftar anggota resmi!`);
         }
