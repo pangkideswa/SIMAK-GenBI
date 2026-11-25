@@ -39,43 +39,15 @@ export const InteractiveLoginBackground: React.FC<InteractiveLoginBackgroundProp
       if (!canvas) return;
       width = canvas.width = window.innerWidth;
       height = canvas.height = window.innerHeight;
-      if (isMobile && ctx) {
-        drawStaticMobile();
-      }
     };
 
     window.addEventListener('resize', handleResize);
 
     const isDark = theme === 'dark';
 
-    // Optimasi performa mobile: Gambar titik statis sekali tanpa continuous requestAnimationFrame loop
-    const drawStaticMobile = () => {
-      ctx.clearRect(0, 0, width, height);
-      const dotCount = Math.min(24, Math.floor((width * height) / 25000));
-      for (let i = 0; i < dotCount; i++) {
-        const px = Math.random() * width;
-        const py = Math.random() * height;
-        const radius = Math.random() * 1.5 + 1;
-        const alpha = Math.random() * 0.4 + 0.2;
-        ctx.beginPath();
-        ctx.arc(px, py, radius, 0, Math.PI * 2);
-        ctx.fillStyle = isDark
-          ? `rgba(96, 165, 250, ${alpha})`
-          : `rgba(37, 99, 235, ${alpha * 0.8})`;
-        ctx.fill();
-      }
-    };
-
-    if (isMobile) {
-      drawStaticMobile();
-      return () => {
-        window.removeEventListener('resize', handleResize);
-      };
-    }
-
-    // Desktop: Animasi interaktif partikel constellation halus tanpa shadowBlur berat
-    const particleCount = 48;
-    const maxDistance = 130;
+    // Animasi interaktif partikel constellation halus tanpa shadowBlur berat (mobile pakai jumlah partikel ringan agar tetap 60fps)
+    const particleCount = isMobile ? 26 : 48;
+    const maxDistance = isMobile ? 110 : 130;
 
     const particles: Particle[] = [];
     for (let i = 0; i < particleCount; i++) {
@@ -105,8 +77,22 @@ export const InteractiveLoginBackground: React.FC<InteractiveLoginBackgroundProp
       mouse.y = -1000;
     };
 
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches && e.touches[0]) {
+        mouse.x = e.touches[0].clientX;
+        mouse.y = e.touches[0].clientY;
+      }
+    };
+
+    const handleTouchEnd = () => {
+      mouse.x = -1000;
+      mouse.y = -1000;
+    };
+
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseleave', handleMouseLeave);
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     const render = () => {
       ctx.clearRect(0, 0, width, height);
@@ -170,6 +156,8 @@ export const InteractiveLoginBackground: React.FC<InteractiveLoginBackgroundProp
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseleave', handleMouseLeave);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
     };
   }, [theme]);
 
