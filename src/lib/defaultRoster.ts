@@ -710,6 +710,7 @@ export interface SeededAttendanceRecord {
   full_name: string;
   division: string;
   event_id: string;
+  event_title: string;
   event_points: number;
   status: 'hadir' | 'izin' | 'alfa';
   verified: boolean;
@@ -748,6 +749,7 @@ export const DEFAULT_SEEDED_ATTENDANCES_60: SeededAttendanceRecord[] = (() => {
         full_name: member.full_name,
         division: member.division,
         event_id: ev.id,
+        event_title: ev.title,
         event_points: ev.points,
         status,
         verified: status !== 'alfa',
@@ -757,6 +759,15 @@ export const DEFAULT_SEEDED_ATTENDANCES_60: SeededAttendanceRecord[] = (() => {
   }
   return records;
 })();
+
+export function computeEvaluationPredicate(
+  totalPoints: number,
+  attendancePercentage: number
+): 'Sangat Aktif' | 'Aktif' | 'Perlu Pembinaan' {
+  if (totalPoints >= 55 && attendancePercentage >= 75) return 'Sangat Aktif';
+  if (totalPoints >= 30 || attendancePercentage >= 50) return 'Aktif';
+  return 'Perlu Pembinaan';
+}
 
 export const DEFAULT_EVALUATIONS_60 = DEFAULT_ROSTER_60.map((m) => {
   const userAtts = DEFAULT_SEEDED_ATTENDANCES_60.filter((a) => a.npm === m.npm);
@@ -777,12 +788,7 @@ export const DEFAULT_EVALUATIONS_60 = DEFAULT_ROSTER_60.map((m) => {
   }
 
   const attendance_percentage = Math.min(100, Math.round((total_hadir / SEEDED_EVENTS.length) * 100));
-  const predicate: 'Sangat Aktif' | 'Aktif' | 'Perlu Pembinaan' =
-    total_points >= 55 && attendance_percentage >= 75
-      ? 'Sangat Aktif'
-      : total_points >= 30 || attendance_percentage >= 50
-      ? 'Aktif'
-      : 'Perlu Pembinaan';
+  const predicate = computeEvaluationPredicate(total_points, attendance_percentage);
 
   return {
     user_id: m.user_id,

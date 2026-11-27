@@ -23,31 +23,43 @@ function doPost(e) {
     var data = JSON.parse(rawData);
 
     if (data.action === "upload") {
-      var folderName = data.folderName || "SIMAK GENBI - Berkas Izin";
+      var folderName = data.folderName || "SIMAK GENBI - Berkas Izin & Dispensasi";
       var folders = DriveApp.getFoldersByName(folderName);
-      var folder;
+      var parentFolder;
 
       if (folders.hasNext()) {
-        folder = folders.next();
+        parentFolder = folders.next();
       } else {
-        folder = DriveApp.createFolder(folderName);
+        parentFolder = DriveApp.createFolder(folderName);
+      }
+
+      // Pisahkan ke subfolder jika data.subFolder dikirim (misal: "Dokumentasi Delegasi" / "Surat Izin & Validasi")
+      var targetFolder = parentFolder;
+      if (data.subFolder) {
+        var subFolders = parentFolder.getFoldersByName(data.subFolder);
+        if (subFolders.hasNext()) {
+          targetFolder = subFolders.next();
+        } else {
+          targetFolder = parentFolder.createFolder(data.subFolder);
+        }
       }
 
       // Decode Base64 data
       var decodedBytes = Utilities.base64Decode(data.base64);
       var blob = Utilities.newBlob(decodedBytes, data.mimeType || "application/octet-stream", data.fileName || "berkas_izin.pdf");
 
-      // Simpan file ke Google Drive
-      var file = folder.createFile(blob);
+      // Simpan file ke Google Drive (subfolder atau folder utama)
+      var file = targetFolder.createFile(blob);
 
       // Beri izin publik view agar panitia/BPH/Admin bisa langsung membuka link bukti izin
       file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
       // Simpan metadata deskripsi file
-      var desc = "Pengunggah NPM: " + (data.uploaderNpm || "-") + "\n" +
+      var desc = "Kategori: " + (data.subFolder || data.category || "izin") + "\n" +
+                 "Pengunggah NPM: " + (data.uploaderNpm || "-") + "\n" +
                  "Nama: " + (data.uploaderName || "-") + "\n" +
                  "Agenda: " + (data.eventTitle || "-") + "\n" +
-                 "Alasan: " + (data.reason || "-") + "\n" +
+                 "Alasan / Catatan: " + (data.reason || "-") + "\n" +
                  "Waktu: " + new Date().toISOString();
       file.setDescription(desc);
 

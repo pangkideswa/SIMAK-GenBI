@@ -46,7 +46,8 @@ import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react';
 import { Html5Qrcode } from 'html5-qrcode';
 import html2canvas from 'html2canvas-pro';
 import { supabase } from '../lib/supabase';
-import { DEFAULT_SEEDED_ATTENDANCES_60, DEFAULT_EVALUATIONS_60 } from '../lib/defaultRoster';
+import { DEFAULT_ROSTER_60, DEFAULT_SEEDED_ATTENDANCES_60, DEFAULT_EVALUATIONS_60, computeEvaluationPredicate } from '../lib/defaultRoster';
+import { resolveUserJabatan } from '../lib/roleMaster';
 import { uploadProofToGDrive } from '../lib/gdrive';
 import { normalizeStudentId, syncMemberUpdate } from '../lib/memberSync';
 import { formatDateTimeWIB } from '../lib/dateUtils';
@@ -80,7 +81,7 @@ import {
   getOfflineQueue,
   flushOfflineQueue,
 } from '../lib/offlineQueue';
-import { getPointSettings } from '../lib/pointSettings';
+import { getPointSettings, syncPointSettingsFromCloud } from '../lib/pointSettings';
 import { getActivePeriod, AcademicPeriod } from '../lib/periodSync';
 import type { Event as EventType, MemberEvaluation, EvaluationPredicate, Role } from '../types/database';
 
@@ -218,6 +219,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     fullName: string;
     division: string;
     role: string;
+    jabatan?: string | null;
     phone?: string | null;
     studyProgram?: string | null;
     bio?: string | null;
@@ -229,6 +231,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     fullName: (user.fullName?.toLowerCase().includes('pangki') || currentNpm === '2414101078') ? 'Ahmad Fauzi' : user.fullName,
     division: user.division,
     role: user.role,
+    jabatan: (() => {
+      const cleanId = normalizeStudentId(currentNpm);
+      const seedMatch = DEFAULT_ROSTER_60.find((m) => m.npm === cleanId);
+      return seedMatch?.jabatan || resolveUserJabatan({ role: user.role, division: user.division });
+    })(),
     phone: (() => {
       try {
         const byId = localStorage.getItem('simak_profile_extra_' + user.id);
@@ -349,6 +356,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   }, []);
 
   useEffect(() => {
+    syncPointSettingsFromCloud().then((s) => setPointSettings(s)).catch(() => {});
     const handleSyncPointSettings = (e?: any) => {
       setPointSettings(e?.detail || getPointSettings());
     };
@@ -376,13 +384,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const memberCardRef = useRef<HTMLDivElement | null>(null);
   const proofFileInputRef = useRef<HTMLInputElement | null>(null);
   const delegasiFileInputRef = useRef<HTMLInputElement | null>(null);
+  const delegasiCameraInputRef = useRef<HTMLInputElement | null>(null);
   const [isDownloadingCard, setIsDownloadingCard] = useState(false);
   const [cardSide, setCardSide] = useState<'front' | 'back'>('front');
 
   // Modals state
   const [showQrModal, setShowQrModal] = useState(false);
   const [showIzinModal, setShowIzinModal] = useState(false);
-  const [showDelegasiModal, setShowDelegasiModal] = useState(false);
+  const [showDelegasiModal, setShowDelegasiModal] = useState<boolean>(() => {
+    try {
+      return Boolean(sessionStorage.getItem('simak_delegasi_draft'));
+    } catch {
+      return false;
+    }
+  });
   const [showScanModal, setShowScanModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [scanMode, setScanMode] = useState<'camera' | 'manual'>('camera');
@@ -397,6 +412,32 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [delegasiSuccess, setDelegasiSuccess] = useState(false);
   const [delegasiGps, setDelegasiGps] = useState<{ lat: number; lng: number } | null>(null);
   const [isFetchingDelegasiGps, setIsFetchingDelegasiGps] = useState(false);
+
+  // Simpan draf form delegasi di sessionStorage agar aman jika browser mobile me-reload saat buka kamera/galeri
+  useEffect(() => {
+    try {
+      if (showDelegasiModal && !delegasiSuccess) {
+        sessionStorage.setItem(
+          'simak_delegasi_draft',
+          JSON.stringify({ title: delegasiTitle, city: delegasiCity, note: delegasiNote })
+        );
+      } else {
+        sessionStorage.removeItem('simak_delegasi_draft');
+      }
+    } catch {}
+  }, [showDelegasiModal, delegasiSuccess, delegasiTitle, delegasiCity, delegasiNote]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('simak_delegasi_draft');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.title) setDelegasiTitle(parsed.title);
+        if (parsed.city) setDelegasiCity(parsed.city);
+        if (parsed.note) setDelegasiNote(parsed.note);
+      }
+    } catch {}
+  }, []);
 
   // Profile Edit Form State
   const [editFullName, setEditFullName] = useState(user.fullName);
@@ -844,13 +885,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         finalFullName = 'Muhamad Fahmi';
       }
 
+      const seedMatch = DEFAULT_ROSTER_60.find((m) => m.npm === cleanId);
+      const finalDivision = ov?.division || p?.division || seedMatch?.division || user.division;
+      const finalRole = ov?.role || p?.role || seedMatch?.role || user.role;
+      const finalJabatan =
+        ov?.jabatan ||
+        p?.jabatan ||
+        seedMatch?.jabatan ||
+        resolveUserJabatan({ role: finalRole, division: finalDivision });
+
       setProfile({
         id: p?.id || user.id,
         npm: studentId,
         nim: studentId,
         fullName: finalFullName,
-        division: ov?.division || p?.division || user.division,
-        role: ov?.role || p?.role || user.role,
+        division: finalDivision,
+        role: finalRole,
+        jabatan: finalJabatan,
         phone: finalPhone,
         studyProgram: finalProdi,
         bio: finalBio,
@@ -1079,8 +1130,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       }
       localAllAtt = filterDeletedAttendances(localAllAtt);
 
-      const activeEvList = events.length > 0 ? events : [];
+      const activeEvList = events.length > 0 ? events : DEFAULT_SAMPLE_EVENTS;
       const eventMap = new Map(activeEvList.map((ev) => [ev.id, ev]));
+      const eventByTitleMap = new Map(
+        activeEvList.map((ev) => [ev.title.trim().toLowerCase(), ev])
+      );
       const validEventIds = new Set(activeEvList.map((ev) => ev.id));
       const totalAgendaCount = Math.max(1, activeEvList.length);
 
@@ -1094,17 +1148,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               a.user_id === m.user_id ||
               (cleanNpm && normalizeStudentId(a.npm || a.nim || a.member_npm) === cleanNpm)
           );
-          const eventAtts = allUserAtts.filter(
-            (a) =>
-              !String(a.event_id || '').startsWith('bph-nilai-') &&
-              (validEventIds.size === 0 || validEventIds.has(a.event_id) || a.status === 'delegasi')
-          );
+          const eventAtts = allUserAtts.filter((a) => {
+            if (String(a.event_id || '').startsWith('bph-nilai-')) return false;
+            if (validEventIds.size === 0 || validEventIds.has(a.event_id) || a.status === 'delegasi') return true;
+            return Boolean(a.event_title && eventByTitleMap.has(String(a.event_title).trim().toLowerCase()));
+          });
           const bonusAtts = allUserAtts.filter((a) => String(a.event_id || '').startsWith('bph-nilai-'));
 
           if ((eventAtts.length > 0 || bonusAtts.length > 0) && activeEvList.length > 0) {
             const uniqueByEvent = new Map<string, any>();
             for (const a of eventAtts) {
-              if (!uniqueByEvent.has(a.event_id)) uniqueByEvent.set(a.event_id, a);
+              const matchedEv =
+                eventMap.get(a.event_id) ||
+                (a.event_title ? eventByTitleMap.get(String(a.event_title).trim().toLowerCase()) : undefined);
+              const dedupKey = matchedEv?.id || a.event_id;
+              if (!uniqueByEvent.has(dedupKey)) uniqueByEvent.set(dedupKey, a);
             }
             let rHadir = 0;
             let rIzin = 0;
@@ -1118,8 +1176,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   rIzin += 1;
                 } else if (a.status === 'hadir' || a.status === 'delegasi') {
                   rHadir += 1;
-                  const evObj = eventMap.get(a.event_id);
-                  const pts = Number(a.event_points ?? evObj?.points ?? (a.status === 'delegasi' ? 30 : 15));
+                  const evObj =
+                    eventMap.get(a.event_id) ||
+                    (a.event_title ? eventByTitleMap.get(String(a.event_title).trim().toLowerCase()) : undefined);
+                  const pts = Number(
+                    a.event_points ??
+                      evObj?.points ??
+                      (a.status === 'delegasi' ? getPointSettings().delegasiPoints : getPointSettings().defaultEventPoints)
+                  );
                   rPoints += pts;
                 }
               }
@@ -1130,12 +1194,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             rPoints = Math.max(0, rPoints);
 
             const rPct = Math.min(100, Math.round((rHadir / totalAgendaCount) * 100));
-            const rPred: EvaluationPredicate =
-              rPoints >= 80 && rPct >= 75
-                ? 'Sangat Aktif'
-                : rPoints >= 50 || rPct >= 50
-                ? 'Aktif'
-                : 'Perlu Pembinaan';
+            const rPred: EvaluationPredicate = computeEvaluationPredicate(rPoints, rPct);
             return {
               ...m,
               total_points: rPoints,
@@ -1723,7 +1782,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     if (events.length === 0) return;
 
     const eventMap = new Map(events.map((ev) => [ev.id, ev]));
-    const validEventIds = new Set(events.map((ev) => ev.id));
+    const eventByTitleMap = new Map(
+      events.map((ev) => [ev.title.trim().toLowerCase(), ev])
+    );
     const uniqueByEvent = new Map<string, AttendanceRecord>();
     let bonusPoints = 0;
     for (const att of attendances) {
@@ -1732,9 +1793,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         bonusPoints += Number(att.event_points ?? 0);
         continue;
       }
-      if (!validEventIds.has(att.event_id) && att.status !== 'delegasi') continue;
-      if (!uniqueByEvent.has(att.event_id)) {
-        uniqueByEvent.set(att.event_id, att);
+      const matchedEv =
+        eventMap.get(att.event_id) ||
+        (att.event_title ? eventByTitleMap.get(att.event_title.trim().toLowerCase()) : undefined);
+      if (!matchedEv && att.status !== 'delegasi') continue;
+      const dedupKey = matchedEv?.id || att.event_id;
+      if (!uniqueByEvent.has(dedupKey)) {
+        uniqueByEvent.set(dedupKey, att);
       }
     }
 
@@ -1750,8 +1815,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           realIzin += 1;
         } else if (att.status === 'hadir' || att.status === 'delegasi') {
           realHadir += 1;
-          const evObj = eventMap.get(att.event_id);
-          realPoints += Number(att.event_points ?? evObj?.points ?? (att.status === 'delegasi' ? 30 : 15));
+          const evObj =
+            eventMap.get(att.event_id) ||
+            (att.event_title ? eventByTitleMap.get(att.event_title.trim().toLowerCase()) : undefined);
+          realPoints += Number(
+            att.event_points ??
+              evObj?.points ??
+              (att.status === 'delegasi' ? getPointSettings().delegasiPoints : getPointSettings().defaultEventPoints)
+          );
         }
       }
     });
@@ -1761,12 +1832,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
     setEvaluation((prev) => {
       const nextPoints = attendances.length > 0 ? realPoints : prev.total_points;
-      const realPredicate: EvaluationPredicate =
-        nextPoints >= 80 && realPercentage >= 75
-          ? 'Sangat Aktif'
-          : nextPoints >= 50 || realPercentage >= 50
-          ? 'Aktif'
-          : 'Perlu Pembinaan';
+      const realPredicate: EvaluationPredicate = computeEvaluationPredicate(nextPoints, realPercentage);
 
       if (
         prev.total_points === nextPoints &&
@@ -1802,12 +1868,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             (myCleanNpm && normalizeStudentId(item.npm || item.nim) === myCleanNpm);
           if (!isMe) return item;
           const nextPoints = attendances.length > 0 ? realPoints : item.total_points;
-          const rPred: EvaluationPredicate =
-            nextPoints >= 80 && realPercentage >= 75
-              ? 'Sangat Aktif'
-              : nextPoints >= 50 || realPercentage >= 50
-              ? 'Aktif'
-              : 'Perlu Pembinaan';
+          const rPred: EvaluationPredicate = computeEvaluationPredicate(nextPoints, realPercentage);
           return {
             ...item,
             total_points: nextPoints,
@@ -1821,6 +1882,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         .sort((a, b) => b.total_points - a.total_points)
     );
   }, [events, attendances, user.id]);
+
+  // Sinkronkan ulang seluruh klasemen 60 anggota ketika daftar agenda aktif selesai dimuat
+  useEffect(() => {
+    if (events.length > 0) {
+      fetchLeaderboard();
+    }
+  }, [events.length]);
 
   // Handler Sinkronisasi Manual Antrean Offline
   const handleManualSyncQueue = async () => {
@@ -1994,9 +2062,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   // Share Agenda ke WhatsApp Broadcast
   const handleShareWhatsApp = (ev: EventType) => {
     const dateFormatted = formatDateTimeWIB(ev.event_date);
+    const baseLocation = ev.location_name || 'Kampus Universitas Majalengka';
     const locationText = ev.require_location
-      ? 'Kampus Universitas Majalengka (Wajib Presensi GPS di Lokasi)'
-      : 'Kampus Universitas Majalengka';
+      ? `${baseLocation} (Wajib Presensi GPS di Lokasi)`
+      : baseLocation;
 
     const text = `📢 *PENGUMUMAN KEGIATAN GENBI UNMA* 📢\n\n📌 *Acara*: ${ev.title}\n📂 *Kategori*: ${ev.category}\n🕒 *Waktu*: ${dateFormatted}\n📍 *Lokasi*: ${locationText}\n🎖️ *Bobot Poin*: +${ev.points} Poin Keaktifan\n🔑 *Kode Token Presensi*: ${ev.qr_token}\n\nMohon seluruh rekan-rekan penerima beasiswa Bank Indonesia hadir tepat waktu dan mengisi presensi via SIMAK GENBI:\n👉 ${window.location.origin}\n\n#GenBIUNMA #EnergiUntukNegeri #BankIndonesia`;
 
@@ -2397,6 +2466,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           uploaderName: profile.fullName,
           eventTitle: currentEvent?.title || 'Agenda GenBI',
           reason: fullNote,
+          category: 'izin',
         });
 
         finalProofUrl = uploadResult.fileUrl;
@@ -2542,6 +2612,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           uploaderName: profile.fullName,
           eventTitle: `[DELEGASI BI] ${delegasiTitle} (${delegasiCity})`,
           reason: delegasiNote,
+          category: 'delegasi',
+          lat,
+          lng,
+          city: delegasiCity,
+          addWatermark: true,
         });
         finalPhotoUrl = uploadResult.fileUrl;
       }
@@ -2559,17 +2634,42 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         submittedAt: new Date().toISOString(),
       });
 
-      // Insert ke Database Supabase attendances
+      // Pastikan event sistem delegasi tersedia di Supabase agar insert tidak gagal FK
       try {
-        const { error } = await (supabase.from('attendances') as any).insert({
-          event_id: targetEventId,
-          user_id: user.id,
-          status: 'delegasi',
-          proof_url: delegasiMetadata,
-          verified: false,
-          user_lat: lat,
-          user_lng: lng,
-        });
+        await (supabase.from('events') as any).upsert(
+          {
+            id: targetEventId,
+            title: 'Penugasan Delegasi Bank Indonesia (Wilayah 9 & 10 Ciayumajakuning)',
+            category: 'mubes-system',
+            event_date: new Date().toISOString(),
+            points: getPointSettings().delegasiPoints,
+            qr_token: 'DELEGASI-BI-SYSTEM',
+            is_active: false,
+            require_location: false,
+          },
+          { onConflict: 'id' }
+        );
+      } catch {}
+
+      // Insert ke Database Supabase attendances
+      let savedDelegasiId = 'delegasi-' + Date.now();
+      try {
+        const { data: insertedAtt, error } = await (supabase.from('attendances') as any)
+          .insert({
+            event_id: targetEventId,
+            user_id: user.id,
+            status: 'delegasi',
+            proof_url: delegasiMetadata,
+            verified: false,
+            user_lat: lat,
+            user_lng: lng,
+          })
+          .select('id')
+          .maybeSingle();
+
+        if (insertedAtt?.id) {
+          savedDelegasiId = insertedAtt.id;
+        }
 
         if (error) {
           if (error.code === '23505' || error.message.includes('unique')) {
@@ -2587,7 +2687,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
       // Simpan ke state dan cache lokal
       const newDelegasiItem: AttendanceRecord = {
-        id: 'delegasi-' + Date.now(),
+        id: savedDelegasiId,
         event_id: targetEventId,
         status: 'delegasi',
         proof_url: delegasiMetadata,
@@ -2632,7 +2732,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       setDelegasiFileUrl('');
       setDelegasiTitle('');
       setDelegasiNote('');
-      showToast('Presensi tugas delegasi berhasil diajukan dan diteruskan ke BPH (+30 Poin).', 'success');
+      showToast(
+        `Presensi tugas delegasi berhasil diajukan dan diteruskan ke BPH (+${delegasiPointsValue} Poin).`,
+        'success'
+      );
       fetchEvaluation();
       fetchAttendances();
     } catch (err: any) {
@@ -2692,10 +2795,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       )}
 
-      {/* Main Container Responsif (Mobile-first, Max-5XL Desktop) */}
-      <div className="w-full max-w-6xl xl:max-w-7xl min-h-screen flex flex-col pb-20">
+      {/* Main Container Responsif (Full-width Header & Footer, Max-7XL Content) */}
+      <div className="w-full min-h-screen flex flex-col">
         {/* Sticky Header Glassmorphism PWA */}
-        <header className="sticky top-0 z-30 px-4 sm:px-8 py-3.5 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-xs flex items-center justify-between">
+        <header className="sticky top-0 z-30 w-full px-4 sm:px-8 py-3.5 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-xs">
+          <div className="w-full max-w-7xl mx-auto flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-white p-1.5 shadow-md shadow-blue-600/10 ring-2 ring-blue-100 border border-slate-100 flex items-center justify-center">
               <img
@@ -2722,7 +2826,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             {profile.role === 'admin' ? (
               <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black bg-blue-100 text-blue-900 border border-blue-200 shadow-xs">
                 <ShieldCheck className="w-3.5 h-3.5 text-blue-700" />
-                BPH Komisariat
+                {profile.jabatan || 'BPH Komisariat'}
               </span>
             ) : profile.role === 'kadiv' ? (
               <span className="hidden sm:inline-flex items-center px-3 py-1 rounded-full text-[11px] font-black bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-xs">
@@ -2776,10 +2880,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               <span className="hidden sm:inline">Keluar</span>
             </button>
           </div>
+          </div>
         </header>
 
         {/* Content Body */}
-        <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <main className="w-full max-w-7xl mx-auto flex-1 p-4 sm:p-6 lg:p-8 pb-10 space-y-6">
           {/* OFFLINE QUEUE FLOATING BANNER */}
           {offlineQueueCount > 0 && (
             <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300/80 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md shadow-amber-500/10 animate-in fade-in duration-300">
@@ -2984,10 +3089,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
                       <div className="mt-1.5 flex justify-center">
                         {(() => {
-                          const jab = (profile as any).jabatan;
-                          if (jab) {
+                          const jab = profile.jabatan || resolveUserJabatan({ role: profile.role, division: profile.division });
+                          if (jab && jab !== 'Anggota') {
                             return (
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-white/20 text-white font-black text-[9px] uppercase tracking-wider shadow-sm border border-white/30">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-blue-500 text-white font-black text-[9px] uppercase tracking-wider shadow-sm border border-blue-400/40">
+                                {profile.role === 'admin' && <ShieldCheck className="w-2.5 h-2.5 text-white" />}
                                 {jab}
                               </span>
                             );
@@ -3370,7 +3476,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
                           const formattedDateWIB = formatDateTimeWIB(agenda.event_date);
 
-                          const matchedAttendance = attendances.find((a) => a.event_id === agenda.id);
+                          const matchedAttendance = attendances.find(
+                            (a) =>
+                              a.event_id === agenda.id ||
+                              (a.event_title &&
+                                agenda.title &&
+                                a.event_title.trim().toLowerCase() === agenda.title.trim().toLowerCase())
+                          );
                           const isAlreadyAttended = matchedAttendance?.status === 'hadir';
                           const isAlreadyIzin = matchedAttendance?.status === 'izin';
 
@@ -3433,7 +3545,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                   <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                  <span>Kampus Universitas Majalengka</span>
+                                  <span>{agenda.location_name || 'Kampus Universitas Majalengka'}</span>
                                 </div>
                               </div>
 
@@ -3494,6 +3606,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                         {attendances.map((att) => {
                           const isHadir = att.status === 'hadir';
                           const isIzin = att.status === 'izin';
+                          const isDelegasi = att.status === 'delegasi';
+
+                          let displayNote = att.proof_url || '';
+                          if (displayNote && displayNote.startsWith('{')) {
+                            try {
+                              const parsedMeta = JSON.parse(displayNote);
+                              if (parsedMeta?.isDelegasi) {
+                                displayNote = `${parsedMeta.title || 'Tugas Delegasi'}${
+                                  parsedMeta.city ? ` • ${parsedMeta.city}` : ''
+                                }${parsedMeta.note ? ` — ${parsedMeta.note}` : ''}`;
+                              }
+                            } catch {}
+                          }
 
                           const dateStr = formatDateTimeWIB(att.scanned_at);
 
@@ -3515,9 +3640,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                   <Clock className="w-3 h-3" />
                                   <span>{dateStr}</span>
                                 </p>
-                                {att.proof_url && (
-                                  <p className="text-[11px] text-slate-500 italic truncate max-w-xs">
-                                    Keterangan: {att.proof_url}
+                                {displayNote && (
+                                  <p className="text-[11px] text-slate-500 italic truncate max-w-xs sm:max-w-md">
+                                    Keterangan: {displayNote}
                                   </p>
                                 )}
                               </div>
@@ -3527,6 +3652,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                                   <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-black">
                                     <CheckCircle className="w-3.5 h-3.5" />
                                     <span>Hadir (+{att.event_points || 10} Poin)</span>
+                                  </span>
+                                )}
+                                {isDelegasi && att.verified && (
+                                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-black">
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                    <span>Delegasi Disetujui (+{att.event_points || pointSettings.delegasiPoints} Poin)</span>
+                                  </span>
+                                )}
+                                {isDelegasi && !att.verified && (
+                                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-[11px] font-bold">
+                                    <Hourglass className="w-3.5 h-3.5" />
+                                    <span>Menunggu Verifikasi</span>
                                   </span>
                                 )}
                                 {isIzin && att.verified && (
@@ -4030,7 +4167,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </main>
 
         {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
-        <Footer className="border-t border-slate-200/80 bg-white/70 backdrop-blur-md text-slate-700" />
+        <Footer className="w-full border-t border-slate-200/80 bg-white/70 backdrop-blur-md text-slate-700" />
       </div>
 
       {/* Modal ID QR Anggota (High-Res Digital Stamp) */}
@@ -4643,48 +4780,85 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   />
                 </div>
 
-                {/* Unggah Foto / ID Card */}
-                <div className="space-y-1">
+                {/* Unggah Foto / Kamera Langsung */}
+                <div className="space-y-1.5">
                   <label className="text-[11px] font-bold text-slate-600 uppercase">
                     Foto Bukti Kegiatan
                   </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      ref={delegasiFileInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          setDelegasiFile(file);
-                        }
-                      }}
-                      className="hidden"
-                    />
+                  <input
+                    ref={delegasiCameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setDelegasiFile(file);
+                      }
+                    }}
+                    className="hidden"
+                  />
+                  <input
+                    ref={delegasiFileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setDelegasiFile(file);
+                      }
+                    }}
+                    className="hidden"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => delegasiFileInputRef.current?.click()}
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 transition cursor-pointer"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        delegasiCameraInputRef.current?.click();
+                      }}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl text-xs font-bold text-blue-700 transition cursor-pointer"
                     >
-                      <Camera className="w-4 h-4 text-slate-500 shrink-0" />
-                      <span className="truncate max-w-[180px]">
-                        {delegasiFile ? delegasiFile.name : 'Pilih Foto / Kamera'}
-                      </span>
+                      <Camera className="w-4 h-4 shrink-0" />
+                      <span>Kamera</span>
                     </button>
 
-                    {delegasiFile && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        delegasiFileInputRef.current?.click();
+                      }}
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 transition cursor-pointer"
+                    >
+                      <Upload className="w-4 h-4 text-slate-500 shrink-0" />
+                      <span>Galeri</span>
+                    </button>
+                  </div>
+
+                  {delegasiFile && (
+                    <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 font-semibold">
+                      <span className="truncate pr-2">{delegasiFile.name}</span>
                       <button
                         type="button"
                         onClick={() => {
                           setDelegasiFile(null);
                           if (delegasiFileInputRef.current) delegasiFileInputRef.current.value = '';
+                          if (delegasiCameraInputRef.current) delegasiCameraInputRef.current.value = '';
                         }}
-                        className="p-2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        className="p-0.5 text-emerald-600 hover:text-emerald-900 cursor-pointer shrink-0"
+                        title="Hapus foto terpilih"
                       >
-                        <X className="w-4 h-4" />
+                        <X className="w-3.5 h-3.5" />
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
 
                 <button

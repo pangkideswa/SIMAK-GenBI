@@ -11,13 +11,39 @@ import { broadcastAttendanceRecorded, broadcastPointSettingsMutated } from './me
 import { sanitizeMemberIdentity } from './attendanceSync';
 
 const SETTINGS_KEY = 'simak_point_settings';
-const DEFAULT_DELEGASI_POINTS = 30;
+const DEFAULT_DELEGASI_POINTS = 25;
+const CLOUD_SETTINGS_QR_TOKEN = 'SIMAK_POINT_SETTINGS_V1';
 
 export interface PointSettings {
-  delegasiPoints: number; // default: 30
+  delegasiPoints: number; // default: 25
   defaultEventPoints: number; // default: 15
   updatedAt?: string;
   updatedBy?: string;
+}
+
+/**
+ * Sinkronkan setelan poin dari Supabase Cloud agar seragam di Laptop, HP, dan Lab
+ */
+export async function syncPointSettingsFromCloud(): Promise<PointSettings> {
+  const local = getPointSettings();
+  try {
+    const { data } = await (supabase.from('events') as any)
+      .select('points, radius_meters, updated_at')
+      .eq('qr_token', CLOUD_SETTINGS_QR_TOKEN)
+      .maybeSingle();
+
+    if (data && typeof data.points === 'number') {
+      const cloudSettings: PointSettings = {
+        delegasiPoints: Number(data.points || DEFAULT_DELEGASI_POINTS),
+        defaultEventPoints: Number(data.radius_meters || 15),
+        updatedAt: data.updated_at || new Date().toISOString(),
+      };
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(cloudSettings));
+      window.dispatchEvent(new CustomEvent('simak_point_settings_updated', { detail: cloudSettings }));
+      return cloudSettings;
+    }
+  } catch {}
+  return local;
 }
 
 /**
@@ -61,6 +87,31 @@ export function savePointSettings(settings: Partial<PointSettings>, actorName = 
     try {
       broadcastPointSettingsMutated(next);
     } catch {}
+    // Simpan juga ke Supabase Cloud agar tersinkron ke semua perangkat
+    (async () => {
+      try {
+        const { data: existing } = await (supabase.from('events') as any)
+          .select('id')
+          .eq('qr_token', CLOUD_SETTINGS_QR_TOKEN)
+          .maybeSingle();
+        if (existing?.id) {
+          await (supabase.from('events') as any)
+            .update({ points: next.delegasiPoints, radius_meters: next.defaultEventPoints })
+            .eq('id', existing.id);
+        } else {
+          await (supabase.from('events') as any).insert({
+            title: 'Konfigurasi Bobot Poin SIMAK',
+            category: 'mubes-system',
+            event_date: new Date().toISOString(),
+            points: next.delegasiPoints,
+            radius_meters: next.defaultEventPoints,
+            qr_token: CLOUD_SETTINGS_QR_TOKEN,
+            is_active: false,
+            require_location: false,
+          });
+        }
+      } catch {}
+    })();
     recordAuditLog({
       actorName,
       actorRole: 'Super Admin',

@@ -30,6 +30,7 @@ export async function saveOrUpdateEvent(eventPayload: Partial<EventType> & { id?
     qr_token: (eventPayload.qr_token || 'TOKEN').toUpperCase(),
     is_active: eventPayload.is_active ?? true,
     require_location: eventPayload.require_location ?? false,
+    location_name: eventPayload.location_name?.trim() || 'Kampus Universitas Majalengka',
     target_lat: eventPayload.target_lat ?? -6.8362,
     target_lng: eventPayload.target_lng ?? 108.2275,
     radius_meters: eventPayload.radius_meters ?? 250,
@@ -79,32 +80,38 @@ export async function saveOrUpdateEvent(eventPayload: Partial<EventType> & { id?
       qr_token: fullEvent.qr_token,
       is_active: fullEvent.is_active,
       require_location: fullEvent.require_location,
+      location_name: fullEvent.location_name,
       target_lat: fullEvent.target_lat,
       target_lng: fullEvent.target_lng,
       radius_meters: fullEvent.radius_meters,
     };
 
-    if (eventPayload.id && !eventPayload.id.startsWith('evt-') && !eventPayload.id.startsWith('demo-')) {
-      const { data, error } = await (supabase.from('events') as any)
-        .update(dbPayload)
-        .eq('id', eventPayload.id)
-        .select()
-        .maybeSingle();
-
-      if (!error && data) {
-        savedEvent = data as EventType;
-        source = 'database';
+    const runSave = async (payloadToSend: any) => {
+      if (eventPayload.id && !eventPayload.id.startsWith('evt-') && !eventPayload.id.startsWith('demo-')) {
+        return (supabase.from('events') as any)
+          .update(payloadToSend)
+          .eq('id', eventPayload.id)
+          .select()
+          .maybeSingle();
       }
-    } else {
-      const { data, error } = await (supabase.from('events') as any)
-        .insert(dbPayload)
+      return (supabase.from('events') as any)
+        .insert(payloadToSend)
         .select()
         .maybeSingle();
+    };
 
-      if (!error && data) {
-        savedEvent = data as EventType;
-        source = 'database';
-        // Perbarui id lokal jika Supabase menghasilkan UUID baru
+    let { data, error } = await runSave(dbPayload);
+    if (error && String(error.message || '').toLowerCase().includes('location_name')) {
+      const { location_name: _omit, ...fallbackPayload } = dbPayload;
+      const retryRes = await runSave(fallbackPayload);
+      data = retryRes.data;
+      error = retryRes.error;
+    }
+
+    if (!error && data) {
+      savedEvent = { ...data, location_name: data.location_name || fullEvent.location_name } as EventType;
+      source = 'database';
+      if (!eventPayload.id || eventPayload.id.startsWith('evt-') || eventPayload.id.startsWith('demo-')) {
         const raw = localStorage.getItem(EVENTS_OVERRIDES_KEY);
         const overrides = raw ? JSON.parse(raw) : {};
         delete overrides[eventId];
@@ -297,11 +304,42 @@ export async function deleteAttendanceRecord(
     });
   } catch {}
 
-  // 6. Eksekusi Hapus di Database Supabase
+  // 6. Eksekusi Hapus di Database Supabase (by UUID id atau kombinasi user_id + event_id)
   try {
-    const { error } = await supabase.from('attendances').delete().eq('id', attendanceId);
-    if (error) {
-      console.warn('Catatan hapus database Supabase:', error.message);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(attendanceId);
+    if (isUuid) {
+      const { error } = await supabase.from('attendances').delete().eq('id', attendanceId);
+      if (error) {
+        console.warn('Catatan hapus database Supabase (by id):', error.message);
+      }
+    }
+    if (targetUserId && eventId) {
+      const { error: pairErr } = await supabase
+        .from('attendances')
+        .delete()
+        .eq('user_id', targetUserId)
+        .eq('event_id', eventId);
+      if (pairErr) {
+        console.warn('Catatan hapus database Supabase (by user+event):', pairErr.message);
+      }
+    }
+
+    // Sinkronkan pengurangan poin & kehadiran ke member_evaluations Supabase Cloud
+    if (updatedEval && (targetUserId || targetNpm)) {
+      const evalUpdatePayload = {
+        total_points: updatedEval.total_points,
+        total_hadir: updatedEval.total_hadir,
+        predicate: updatedEval.predicate,
+      };
+      if (targetUserId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetUserId)) {
+        await (supabase.from('member_evaluations') as any)
+          .update(evalUpdatePayload)
+          .eq('user_id', targetUserId);
+      } else if (targetNpm) {
+        await (supabase.from('member_evaluations') as any)
+          .update(evalUpdatePayload)
+          .or(`npm.eq.${targetNpm},nim.eq.${targetNpm}`);
+      }
     }
   } catch (err: any) {
     console.warn('Gagal menghubungi database saat menghapus presensi:', err?.message);

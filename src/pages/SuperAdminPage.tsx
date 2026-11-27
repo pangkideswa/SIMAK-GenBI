@@ -1435,14 +1435,14 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
               <div>
                 <span className="text-xs font-black uppercase text-amber-400 block tracking-wider flex items-center gap-1.5">
                   <Laptop className="w-3.5 h-3.5 text-blue-400" />
-                  <span>🧪 Simulator Tampilan Pengembang</span>
+                  <span>Pratinjau Antarmuka Peran</span>
                 </span>
                 <p className="text-xs text-slate-400">
-                  Uji antarmuka pengguna seolah-olah Anda login sebagai Kepala Divisi atau Anggota biasa.
+                  Simulasikan tampilan dasbor sebagai Kepala Divisi atau Anggota untuk memverifikasi tata letak dan sinkronisasi data.
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                 <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
                   <button
                     onClick={() => setSimulatedRole('kadiv')}
@@ -1470,7 +1470,7 @@ export const SuperAdminPage: React.FC<SuperAdminPageProps> = ({ onLogout }) => {
                 <select
                   value={simulatedDivision}
                   onChange={(e) => setSimulatedDivision(e.target.value as Division)}
-                  className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
+                  className="w-full sm:w-auto px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-bold text-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/40 cursor-pointer"
                 >
                   <option value="Publikasi dan Sosialisasi">Divisi Publikasi & Sosialisasi</option>
                   <option value="Lingkungan Hidup">Divisi Lingkungan Hidup</option>

@@ -39,13 +39,15 @@ import {
   Camera,
   RefreshCw,
   ImagePlus,
+  Phone,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { supabase } from '../lib/supabase';
-import { DEFAULT_ROSTER_60, DEFAULT_SEEDED_ATTENDANCES_60, DEFAULT_EVALUATIONS_60 } from '../lib/defaultRoster';
+import { DEFAULT_ROSTER_60, DEFAULT_SEEDED_ATTENDANCES_60, DEFAULT_EVALUATIONS_60, computeEvaluationPredicate } from '../lib/defaultRoster';
 import { syncMemberUpdate, normalizeStudentId } from '../lib/memberSync';
 import { formatDateTimeWIB, toDatetimeLocalWIB } from '../lib/dateUtils';
+import { getPointSettings, syncPointSettingsFromCloud } from '../lib/pointSettings';
 import { WibDateTimePicker } from '../components/WibDateTimePicker';
 import { MemberReportModal } from '../components/MemberReportModal';
 import { AttendanceSheetModal } from '../components/AttendanceSheetModal';
@@ -371,6 +373,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [newDate, setNewDate] = useState('');
   const [newPoints, setNewPoints] = useState(15);
   const [newToken, setNewToken] = useState('');
+  const [newLocation, setNewLocation] = useState('Kampus Universitas Majalengka');
   const [requireLocation, setRequireLocation] = useState(false);
   const [targetRadius, setTargetRadius] = useState(250);
   const [isSubmittingEvent, setIsSubmittingEvent] = useState(false);
@@ -383,6 +386,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [editEventDate, setEditEventDate] = useState('');
   const [editEventPoints, setEditEventPoints] = useState(15);
   const [editEventToken, setEditEventToken] = useState('');
+  const [editEventLocation, setEditEventLocation] = useState('Kampus Universitas Majalengka');
   const [editEventRequireLocation, setEditEventRequireLocation] = useState(false);
   const [editEventRadius, setEditEventRadius] = useState(250);
   const [isUpdatingEvent, setIsUpdatingEvent] = useState(false);
@@ -535,6 +539,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         const { data: supaAtts } = await supabase
           .from('attendances')
           .select('id, user_id, event_id, status, verified, scanned_at');
+        await syncPointSettingsFromCloud();
         if (supaAtts && supaAtts.length > 0) {
           for (const sa of supaAtts as any[]) {
             if (!localAllAtt.some((la) => la.id === sa.id || (la.user_id === sa.user_id && la.event_id === sa.event_id))) {
@@ -560,30 +565,73 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       localAllAtt = filterDeletedAttendances(localAllAtt);
 
       const eventMap = new Map(finalActiveEvents.map((ev) => [ev.id, ev]));
+      const eventByTitleMap = new Map(
+        finalActiveEvents.map((ev) => [ev.title.trim().toLowerCase(), ev])
+      );
       const validEventIds = new Set(finalActiveEvents.map((ev) => ev.id));
       const totalAgendaCount = Math.max(1, finalActiveEvents.length);
+
+      const phoneMap = new Map<string, string>();
+      try {
+        const { data: profPhones } = await supabase
+          .from('profiles')
+          .select('id, npm, nim, phone');
+        if (profPhones && profPhones.length > 0) {
+          for (const p of profPhones as any[]) {
+            if (!p.phone) continue;
+            if (p.id) phoneMap.set(p.id, String(p.phone));
+            const pNpm = normalizeStudentId(p.npm || p.nim);
+            if (pNpm) phoneMap.set(pNpm, String(p.phone));
+          }
+        }
+      } catch {}
+
+      const resolveMemberPhone = (m: any, cleanNpm: string): string | null => {
+        const fromDb = phoneMap.get(m.user_id) || (cleanNpm ? phoneMap.get(cleanNpm) : null);
+        if (fromDb) return fromDb;
+        try {
+          const byId = m.user_id ? localStorage.getItem('simak_profile_extra_' + m.user_id) : null;
+          if (byId) {
+            const parsed = JSON.parse(byId);
+            if (parsed?.phone) return String(parsed.phone);
+          }
+          if (cleanNpm) {
+            const byNpm = localStorage.getItem('simak_profile_extra_' + cleanNpm);
+            if (byNpm) {
+              const parsed = JSON.parse(byNpm);
+              if (parsed?.phone) return String(parsed.phone);
+            }
+          }
+        } catch {}
+        return m.phone || null;
+      };
 
       const reconciledEvals = applyEvaluationsOverrides(baseEvals)
         .filter((m) => !isSuperAdminAccount(m))
         .map((rawM) => {
           const m = sanitizeMemberIdentity(rawM);
           const cleanNpm = normalizeStudentId(m.npm || m.nim);
+          const resolvedPhone = resolveMemberPhone(m, cleanNpm);
           const allUserAtts = localAllAtt.filter(
             (a) =>
               a.user_id === m.user_id ||
               (cleanNpm && normalizeStudentId(a.npm || a.nim || a.member_npm) === cleanNpm)
           );
-          const eventAtts = allUserAtts.filter(
-            (a) =>
-              !String(a.event_id || '').startsWith('bph-nilai-') &&
-              (validEventIds.size === 0 || validEventIds.has(a.event_id) || a.status === 'delegasi')
-          );
+          const eventAtts = allUserAtts.filter((a) => {
+            if (String(a.event_id || '').startsWith('bph-nilai-')) return false;
+            if (validEventIds.size === 0 || validEventIds.has(a.event_id) || a.status === 'delegasi') return true;
+            return Boolean(a.event_title && eventByTitleMap.has(String(a.event_title).trim().toLowerCase()));
+          });
           const bonusAtts = allUserAtts.filter((a) => String(a.event_id || '').startsWith('bph-nilai-'));
 
           if (eventAtts.length > 0 || bonusAtts.length > 0) {
             const uniqueByEvent = new Map<string, any>();
             for (const a of eventAtts) {
-              if (!uniqueByEvent.has(a.event_id)) uniqueByEvent.set(a.event_id, a);
+              const matchedEv =
+                eventMap.get(a.event_id) ||
+                (a.event_title ? eventByTitleMap.get(String(a.event_title).trim().toLowerCase()) : undefined);
+              const dedupKey = matchedEv?.id || a.event_id;
+              if (!uniqueByEvent.has(dedupKey)) uniqueByEvent.set(dedupKey, a);
             }
             let rHadir = 0;
             let rIzin = 0;
@@ -597,8 +645,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   rIzin += 1;
                 } else if (a.status === 'hadir' || a.status === 'delegasi') {
                   rHadir += 1;
-                  const evObj = eventMap.get(a.event_id);
-                  const pts = Number(a.event_points ?? evObj?.points ?? (a.status === 'delegasi' ? 30 : 15));
+                  const evObj =
+                    eventMap.get(a.event_id) ||
+                    (a.event_title ? eventByTitleMap.get(String(a.event_title).trim().toLowerCase()) : undefined);
+                  const pts = Number(
+                    a.event_points ??
+                      evObj?.points ??
+                      (a.status === 'delegasi' ? getPointSettings().delegasiPoints : getPointSettings().defaultEventPoints)
+                  );
                   rPoints += pts;
                 }
               }
@@ -612,14 +666,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               finalActiveEvents.length > 0
                 ? Math.min(100, Math.round((rHadir / totalAgendaCount) * 100))
                 : m.attendance_percentage;
-            const rPred: EvaluationPredicate =
-              rPoints >= 80 && rPct >= 75
-                ? 'Sangat Aktif'
-                : rPoints >= 50 || rPct >= 50
-                ? 'Aktif'
-                : 'Perlu Pembinaan';
+            const rPred: EvaluationPredicate = computeEvaluationPredicate(rPoints, rPct);
             return {
               ...m,
+              phone: resolvedPhone,
               total_points: rPoints,
               total_hadir: rHadir,
               total_izin: rIzin,
@@ -633,18 +683,22 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             const cappedHadir = finalActiveEvents.length;
             return {
               ...m,
+              phone: resolvedPhone,
               total_hadir: cappedHadir,
               attendance_percentage: Math.min(100, Math.round((cappedHadir / totalAgendaCount) * 100)),
             };
           }
-          return m;
+          return {
+            ...m,
+            phone: resolvedPhone,
+          };
         })
         .sort((a, b) => b.total_points - a.total_points);
 
       setEvaluations(reconciledEvals);
 
       // 3. Ambil Pengajuan Izin & Delegasi Menunggu Verifikasi
-      const { data: attData } = await supabase
+      const { data: attData, error: attError } = await supabase
         .from('attendances')
         .select('id, user_id, event_id, status, proof_url, verified, scanned_at, user_lat, user_lng')
         .in('status', ['izin', 'delegasi'])
@@ -708,14 +762,75 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         });
       }
 
-      // Sinkronkan juga dari simak_all_attendances di localStorage jika ada pengajuan lokal
+      // Sinkronkan dengan simak_all_attendances:
+      // Jika Supabase online (!attError) dan bukan mode demo, Supabase adalah sumber kebenaran lintas perangkat
+      // sehingga ajuan izin lokal yang sudah dihapus/diverifikasi di perangkat lain otomatis dibersihkan.
       try {
         const localAllRaw = localStorage.getItem('simak_all_attendances');
         if (localAllRaw) {
           const localAll = JSON.parse(localAllRaw);
-          const localPending = localAll.filter(
-            (p: any) => (p.status === 'izin' || p.status === 'delegasi') && !p.verified && !enrichedPending.some((ep) => ep.id === p.id)
-          );
+          if (!attError && !user.id.startsWith('demo-')) {
+            const prunedAll = localAll.filter((p: any) => {
+              if (p.status === 'izin' && !p.verified) {
+                return enrichedPending.some(
+                  (ep) =>
+                    ep.id === p.id ||
+                    (ep.user_id === p.user_id && ep.event_id === p.event_id)
+                );
+              }
+              return true;
+            });
+            if (prunedAll.length !== localAll.length) {
+              localStorage.setItem('simak_all_attendances', JSON.stringify(prunedAll));
+            }
+          }
+          const localPending = localAll.filter((p: any) => {
+            if (!attError && !user.id.startsWith('demo-') && p.status === 'izin') {
+              return false;
+            }
+            return (
+              (p.status === 'izin' || p.status === 'delegasi') &&
+              !p.verified &&
+              !enrichedPending.some(
+                (ep) =>
+                  ep.id === p.id ||
+                  (ep.user_id === p.user_id && ep.event_id === p.event_id)
+              )
+            );
+          });
+
+          // Pulihkan juga pengajuan delegasi yang masih ada di simak_attendances_* jika sempat ter-prune dari simak_all_attendances
+          try {
+            const existingAllIds = new Set(localAll.map((x: any) => x.id));
+            const restoredItems: any[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i);
+              if (!k || !k.startsWith('simak_attendances_')) continue;
+              const rawUserAtt = localStorage.getItem(k);
+              if (!rawUserAtt) continue;
+              const userAtts = JSON.parse(rawUserAtt);
+              if (!Array.isArray(userAtts)) continue;
+              const ownerId = k.replace('simak_attendances_', '');
+              const ownerEval = reconciledEvals.find((e) => e.user_id === ownerId);
+              for (const ua of userAtts) {
+                if (ua.status === 'delegasi' && !ua.verified && !existingAllIds.has(ua.id)) {
+                  const restored = {
+                    ...ua,
+                    user_id: ua.user_id || ownerId,
+                    full_name: ua.full_name || ownerEval?.full_name || 'Anggota GenBI',
+                    npm: ua.npm || ua.nim || ownerEval?.npm || '-',
+                    nim: ua.nim || ua.npm || ownerEval?.nim || '-',
+                  };
+                  restoredItems.push(restored);
+                  localPending.push(restored);
+                  existingAllIds.add(ua.id);
+                }
+              }
+            }
+            if (restoredItems.length > 0) {
+              localStorage.setItem('simak_all_attendances', JSON.stringify([...restoredItems, ...localAll]));
+            }
+          } catch {}
 
           for (const lp of localPending) {
             let isDelegasi = lp.status === 'delegasi';
@@ -1450,7 +1565,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       } catch {}
 
       for (const sa of DEFAULT_SEEDED_ATTENDANCES_60) {
-        if (sa.event_id !== eventItem.id) continue;
+        const isSameEvent =
+          sa.event_id === eventItem.id ||
+          (sa.event_title &&
+            eventItem.title &&
+            sa.event_title.trim().toLowerCase() === eventItem.title.trim().toLowerCase());
+        if (!isSameEvent) continue;
         const exists = merged.some(
           (e) => e.user_id === sa.user_id || normalizeStudentId(e.npm || e.nim) === sa.npm
         );
@@ -1593,6 +1713,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       qr_token: newToken.trim().toUpperCase(),
       is_active: true,
       require_location: requireLocation,
+      location_name: newLocation.trim() || 'Kampus Universitas Majalengka',
       target_lat: -6.8362, // Kampus UNMA Majalengka
       target_lng: 108.2275,
       radius_meters: Number(targetRadius),
@@ -1604,6 +1725,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       setShowCreateModal(false);
       setNewTitle('');
       setNewToken('');
+      setNewLocation('Kampus Universitas Majalengka');
       setRequireLocation(false);
 
       recordAuditLog({
@@ -1723,6 +1845,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setEditEventDate(toDatetimeLocalWIB(ev.event_date));
     setEditEventPoints(ev.points || 15);
     setEditEventToken(ev.qr_token || '');
+    setEditEventLocation(ev.location_name || 'Kampus Universitas Majalengka');
     setEditEventRequireLocation(ev.require_location || false);
     setEditEventRadius(ev.radius_meters || 250);
     setShowEditEventModal(true);
@@ -1741,6 +1864,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       points: Number(editEventPoints),
       qr_token: editEventToken.trim().toUpperCase(),
       require_location: editEventRequireLocation,
+      location_name: editEventLocation.trim() || 'Kampus Universitas Majalengka',
       radius_meters: Number(editEventRadius),
     };
 
@@ -1865,20 +1989,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const handleDeleteIzin = async (id: string, memberName: string) => {
     if (!confirm(`Hapus / batalkan pengajuan izin dari ${memberName}?`)) return;
 
-    if (user.id.startsWith('demo-')) {
-      setPendingIzin(pendingIzin.filter((p) => p.id !== id));
-      showToast('Pengajuan izin dihapus.', 'info');
-      return;
-    }
-
     try {
-      const { error } = await supabase.from('attendances').delete().eq('id', id);
-      if (error) throw error;
-      setPendingIzin(pendingIzin.filter((p) => p.id !== id));
+      const matched = pendingIzin.find((p) => p.id === id);
+      await deleteAttendanceRecord(id, matched?.event_id, {
+        userId: matched?.user_id,
+        npm: matched?.member_npm || matched?.member_nim,
+      });
+      setPendingIzin((prev) => prev.filter((p) => p.id !== id));
       showToast('Pengajuan izin berhasil dihapus.', 'info');
       loadAdminData();
     } catch (err: any) {
-      showToast('Gagal menghapus izin: ' + err.message, 'error');
+      showToast('Gagal menghapus izin: ' + (err?.message || 'Terjadi kesalahan'), 'error');
     }
   };
 
@@ -2317,9 +2438,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   // Share Agenda ke WhatsApp Broadcast Resmi
   const handleShareWhatsApp = (ev: EventType) => {
     const dateFormatted = formatDateTimeWIB(ev.event_date);
+    const baseLocation = ev.location_name || 'Kampus Universitas Majalengka';
     const locationText = ev.require_location
-      ? 'Kampus Universitas Majalengka (Wajib Presensi GPS di Lokasi)'
-      : 'Kampus Universitas Majalengka';
+      ? `${baseLocation} (Wajib Presensi GPS di Lokasi)`
+      : baseLocation;
 
     const text = `📢 *PENGUMUMAN KEGIATAN GENBI UNMA* 📢\n\n📌 *Acara*: ${ev.title}\n📂 *Kategori*: ${ev.category}\n🕒 *Waktu*: ${dateFormatted}\n📍 *Lokasi*: ${locationText}\n🎖️ *Bobot Poin*: +${ev.points} Poin Keaktifan\n🔑 *Kode Token Presensi*: ${ev.qr_token}\n\nMohon seluruh rekan-rekan penerima beasiswa Bank Indonesia hadir tepat waktu dan mengisi presensi via SIMAK GENBI:\n👉 ${window.location.origin}\n\n#GenBIUNMA #EnergiUntukNegeri #BankIndonesia`;
 
@@ -2328,14 +2450,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
   // Setujui Izin / Delegasi dengan Broadcast Realtime ke HP Anggota
   const handleApproveIzin = async (id: string, isDelegasi = false) => {
-    // 1. Eksekusi sinkronisasi terpadu (+30 poin jika delegasi, update riwayat personal dan leaderboard)
+    const delegasiPts = getPointSettings().delegasiPoints;
+    // 1. Eksekusi sinkronisasi terpadu (update riwayat personal dan leaderboard)
     await approveAttendanceSync(id, isDelegasi);
 
     if (user.id.startsWith('demo-') || id.startsWith('delegasi-') || id.startsWith('izin-')) {
       setPendingIzin(pendingIzin.filter((p) => p.id !== id));
       showToast(
         isDelegasi
-          ? 'Tugas delegasi BI disetujui (+30 Poin ditambahkan & disiarkan realtime ke HP anggota)!'
+          ? `Tugas delegasi BI disetujui (+${delegasiPts} Poin ditambahkan & disiarkan realtime ke HP anggota)!`
           : 'Dispensasi izin disetujui (Disiarkan realtime ke HP anggota)!',
         'success'
       );
@@ -2353,13 +2476,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         actionType: isDelegasi ? 'DELEGASI_APPROVE' : 'IZIN_APPROVE',
         target: approvedTarget?.member_name || id,
         description: isDelegasi
-          ? `Menyetujui tugas delegasi Bank Indonesia untuk ${approvedTarget?.member_name || id} (+30 Poin).`
+          ? `Menyetujui tugas delegasi Bank Indonesia untuk ${approvedTarget?.member_name || id} (+${delegasiPts} Poin).`
           : `Menyetujui dispensasi izin kegiatan untuk ${approvedTarget?.member_name || id}.`,
       });
 
       showToast(
         isDelegasi
-          ? 'Tugas delegasi Bank Indonesia resmi disetujui (+30 Poin ditambahkan & disiarkan realtime ke HP anggota)!'
+          ? `Tugas delegasi Bank Indonesia resmi disetujui (+${delegasiPts} Poin ditambahkan & disiarkan realtime ke HP anggota)!`
           : 'Permohonan izin resmi disetujui & disinkronkan ke HP anggota.',
         'success'
       );
@@ -2538,9 +2661,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         </div>
       )}
 
-      <div className="w-full max-w-7xl min-h-screen flex flex-col pb-20">
+      <div className="w-full min-h-screen flex flex-col">
         {/* Sticky Header BPH */}
-        <header className="sticky top-0 z-30 px-3 sm:px-8 py-2.5 sm:py-4 bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-xs flex items-center justify-between">
+        <header className="sticky top-0 z-30 w-full px-3 sm:px-8 py-2.5 sm:py-4 bg-white/95 backdrop-blur-xl border-b border-slate-200/80 shadow-xs">
+          <div className="w-full max-w-7xl mx-auto flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-white p-1 shadow-xs border border-slate-200 flex items-center justify-center shrink-0">
               <img
@@ -2603,10 +2727,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               <span className="hidden sm:inline">Keluar</span>
             </button>
           </div>
+          </div>
         </header>
 
         {/* Content Body */}
-        <main className="p-4 sm:p-6 lg:p-8 space-y-6">
+        <main className="w-full max-w-7xl mx-auto flex-1 p-4 sm:p-6 lg:p-8 pb-10 space-y-6">
           {/* Header KPI Stats Banner */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
             <div className="p-4 sm:p-5 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/80 shadow-xs flex items-center gap-3.5">
@@ -3113,7 +3238,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                   rel="noreferrer"
                                   className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 hover:underline bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200/60"
                                 >
-                                  <span>Lihat Bukti Foto di Google Drive</span>
+                                  <span>Lihat Bukti</span>
                                   <ExternalLink className="w-3 h-3" />
                                 </a>
                               )}
@@ -3161,7 +3286,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                               }`}
                             >
                               {isDelegasi ? <Award className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                              <span>{isDelegasi ? 'Setujui Delegasi (+30 P)' : 'Setujui Izin'}</span>
+                              <span>
+                                {isDelegasi
+                                  ? `Setujui Delegasi (+${getPointSettings().delegasiPoints} P)`
+                                  : 'Setujui Izin'}
+                              </span>
                             </button>
                           </div>
                         </div>
@@ -3276,7 +3405,10 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                         </span>
                                       )}
                                     </div>
-                                    <span className="font-mono text-[10px] text-slate-400">{m.npm || m.nim}</span>
+                                    <span className="font-mono text-[10px] text-slate-400">
+                                      {m.npm || m.nim}
+                                      {(m as any).phone ? ` • ${(m as any).phone}` : ''}
+                                    </span>
                                   </div>
                                 </div>
                               </td>
@@ -3310,6 +3442,38 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                                   >
                                     <Plus className="w-3 h-3 text-emerald-600" />
                                     <span>Nilai</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const rawPhone = String((m as any).phone || '').replace(/\D/g, '');
+                                      if (!rawPhone || rawPhone.length < 9) {
+                                        showToast(`Nomor WA ${m.full_name} belum diisi di profilnya.`, 'info');
+                                        return;
+                                      }
+                                      const waPhone = rawPhone.startsWith('0')
+                                        ? '62' + rawPhone.slice(1)
+                                        : rawPhone.startsWith('62')
+                                        ? rawPhone
+                                        : '62' + rawPhone;
+                                      const msg = encodeURIComponent(
+                                        `Halo ${m.full_name}, izin konfirmasi keaktifan kegiatan GenBI UNMA (Kehadiran: ${m.total_hadir} kali, Poin: ${m.total_points}).`
+                                      );
+                                      window.open(`https://wa.me/${waPhone}?text=${msg}`, '_blank');
+                                    }}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold border transition cursor-pointer text-[10px] ${
+                                      (m as any).phone
+                                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                                        : 'bg-slate-50 hover:bg-slate-100 text-slate-400 border-slate-200'
+                                    }`}
+                                    title={
+                                      (m as any).phone
+                                        ? `Hubungi ${m.full_name} via WhatsApp (${(m as any).phone})`
+                                        : 'Nomor WA belum diisi oleh anggota'
+                                    }
+                                  >
+                                    <Phone className="w-3 h-3" />
+                                    <span>WA</span>
                                   </button>
                                   <button
                                     type="button"
@@ -3381,13 +3545,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         <span>{isTogglingPublish ? 'Memproses...' : 'Terbitkan ke Anggota'}</span>
                       </>
                     )}
-                  </button>
-                  <button
-                    onClick={handleExportCSV}
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 transition cursor-pointer backdrop-blur-md shadow-xs active:scale-95"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Ekspor Format LPJ BI</span>
                   </button>
                   <button
                     onClick={loadAdminData}
@@ -3915,7 +4072,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         </main>
 
         {/* Footer Hak Cipta SIMAK GenBI & PD-Dev */}
-        <Footer className="border-t border-slate-200/80 bg-white/70 backdrop-blur-md text-slate-700" />
+        <Footer className="w-full border-t border-slate-200/80 bg-white/70 backdrop-blur-md text-slate-700" />
       </div>
 
       {/* Modal Buat Acara Baru */}
@@ -3979,6 +4136,21 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 label="Tanggal & Jam Pelaksanaan"
                 required
               />
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-600 uppercase flex items-center gap-1">
+                  <MapPin className="w-3 h-3 text-blue-600" />
+                  <span>Lokasi / Tempat Pelaksanaan</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newLocation}
+                  onChange={(e) => setNewLocation(e.target.value)}
+                  placeholder="Contoh: Kampus Universitas Majalengka / SMAN 1 Majalengka"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/30 focus:outline-none"
+                />
+              </div>
 
               <div className="space-y-1">
                 <div className="flex justify-between items-center">
@@ -4115,6 +4287,21 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                 label="Waktu Pelaksanaan"
                 required
               />
+
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-slate-600 uppercase flex items-center gap-1">
+                  <MapPin className="w-3 h-3 text-blue-600" />
+                  <span>Lokasi / Tempat Pelaksanaan</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editEventLocation}
+                  onChange={(e) => setEditEventLocation(e.target.value)}
+                  placeholder="Contoh: Kampus Universitas Majalengka / SMAN 1 Majalengka"
+                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600/30 focus:outline-none"
+                />
+              </div>
 
               <div className="space-y-1">
                 <label className="text-[11px] font-bold text-slate-600 uppercase">Kode Token Presensi</label>

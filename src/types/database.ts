@@ -69,6 +69,7 @@ export interface Event {
   qr_token: string;
   is_active: boolean;
   require_location?: boolean;
+  location_name?: string | null;
   target_lat?: number | null;
   target_lng?: number | null;
   radius_meters?: number;
@@ -85,6 +86,7 @@ export interface EventInsert {
   qr_token: string;
   is_active?: boolean;
   require_location?: boolean;
+  location_name?: string | null;
   target_lat?: number | null;
   target_lng?: number | null;
   radius_meters?: number;
@@ -100,6 +102,7 @@ export interface EventUpdate {
   qr_token?: string;
   is_active?: boolean;
   require_location?: boolean;
+  location_name?: string | null;
   target_lat?: number | null;
   target_lng?: number | null;
   radius_meters?: number;

@@ -11,16 +11,32 @@ export interface GDriveUploadMetadata {
   uploaderName: string;
   eventTitle: string;
   reason?: string;
+  category?: 'izin' | 'delegasi';
+  lat?: number | null;
+  lng?: number | null;
+  city?: string;
+  addWatermark?: boolean;
 }
 
 /**
- * Kompresi gambar aman untuk ponsel cerdas (Anti-Crash & Anti-Reload):
+ * Kompresi gambar & cetak watermark timestamp/GPS aman untuk ponsel cerdas (Anti-Crash & Anti-Reload):
  * Menggunakan URL.createObjectURL (zero memory overhead) alih-alih FileReader data URL
  * agar browser mobile (Android/iOS) tidak mengalami Out-Of-Memory (OOM) yang memicu refresh otomatis.
  */
-async function compressImageIfNeeded(file: File): Promise<File> {
-  // Hanya proses jika file bertipe gambar dan ukurannya > 200 KB
-  if (!file.type.startsWith('image/') || file.size <= 200 * 1024) {
+async function compressImageIfNeeded(
+  file: File,
+  watermarkOptions?: {
+    enabled?: boolean;
+    uploaderName: string;
+    uploaderNpm: string;
+    city?: string;
+    lat?: number | null;
+    lng?: number | null;
+  }
+): Promise<File> {
+  const needsWatermark = Boolean(watermarkOptions?.enabled) && file.type.startsWith('image/');
+  // Hanya proses jika file bertipe gambar dan ukurannya > 200 KB atau butuh watermark
+  if (!file.type.startsWith('image/') || (file.size <= 200 * 1024 && !needsWatermark)) {
     return file;
   }
 
@@ -58,6 +74,49 @@ async function compressImageIfNeeded(file: File): Promise<File> {
           }
 
           ctx.drawImage(img, 0, 0, width, height);
+
+          if (needsWatermark && watermarkOptions) {
+            const wibTime =
+              new Date().toLocaleString('id-ID', {
+                timeZone: 'Asia/Jakarta',
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              }) + ' WIB';
+            const gpsText =
+              watermarkOptions.lat != null && watermarkOptions.lng != null
+                ? `GPS: ${watermarkOptions.lat.toFixed(6)}, ${watermarkOptions.lng.toFixed(6)}`
+                : 'GPS: Lokasi tidak tersedia';
+            const identityText = `${watermarkOptions.uploaderName} (${watermarkOptions.uploaderNpm})${
+              watermarkOptions.city ? ` • ${watermarkOptions.city}` : ''
+            }`;
+
+            const fontSize = Math.max(11, Math.round(width * 0.022));
+            const lineHeight = Math.round(fontSize * 1.38);
+            const padX = Math.max(10, Math.round(width * 0.02));
+            const padY = Math.max(8, Math.round(fontSize * 0.6));
+            const boxHeight = lineHeight * 3 + padY * 2;
+            const boxY = Math.max(0, height - boxHeight);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.74)';
+            ctx.fillRect(0, boxY, width, boxHeight);
+
+            ctx.textBaseline = 'top';
+            ctx.font = `700 ${fontSize}px sans-serif`;
+            ctx.fillStyle = '#fbbf24';
+            ctx.fillText(`SIMAK GENBI • ${wibTime}`, padX, boxY + padY);
+
+            ctx.font = `600 ${fontSize}px monospace`;
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillText(gpsText, padX, boxY + padY + lineHeight);
+
+            ctx.font = `600 ${fontSize}px sans-serif`;
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillText(identityText, padX, boxY + padY + lineHeight * 2);
+          }
 
           canvas.toBlob(
             (blob) => {
@@ -126,18 +185,28 @@ export async function uploadProofToGDrive(
     throw new Error('Format berkas tidak diizinkan. Sistem hanya menerima berkas Foto (JPG, PNG, WEBP) atau Dokumen PDF resmi.');
   }
 
-  // 2. Kompresi gambar terlebih dahulu untuk mencegah crash memori di browser ponsel
-  const processedFile = await compressImageIfNeeded(file);
+  // 2. Kompresi gambar & tambahkan watermark jika diminta (delegasi)
+  const processedFile = await compressImageIfNeeded(file, {
+    enabled: metadata.addWatermark,
+    uploaderName: metadata.uploaderName,
+    uploaderNpm: metadata.uploaderNpm,
+    city: metadata.city,
+    lat: metadata.lat,
+    lng: metadata.lng,
+  });
 
   const gdriveEndpoint =
     import.meta.env.VITE_GDRIVE_UPLOAD_URL ||
     localStorage.getItem('simak_gdrive_upload_url') ||
     '';
 
+  const category = metadata.category || 'izin';
+  const subFolder = category === 'delegasi' ? 'Dokumentasi Delegasi' : 'Surat Izin & Validasi';
+  const filePrefix = category === 'delegasi' ? 'DELEGASI' : 'IZIN';
   const cleanNpm = (metadata.uploaderNpm || 'NPM').replace(/[^a-zA-Z0-9_-]/g, '');
   const cleanExt = (processedFile.name.split('.').pop() || 'jpg').toLowerCase();
   const safeExt = allowedExtensions.includes(cleanExt) ? cleanExt : 'jpg';
-  const targetFileName = `IZIN_${cleanNpm}_${Date.now()}.${safeExt}`;
+  const targetFileName = `${filePrefix}_${cleanNpm}_${Date.now()}.${safeExt}`;
 
   // 2. Jika Google Apps Script terkonfigurasi, coba unggah ke Google Drive dengan timeout 12 detik
   if (gdriveEndpoint && gdriveEndpoint.startsWith('https://script.google.com/')) {
@@ -153,6 +222,8 @@ export async function uploadProofToGDrive(
         mimeType: processedFile.type || 'image/jpeg',
         base64: base64Data.split(',')[1] || base64Data,
         folderName: 'SIMAK GENBI - Berkas Izin & Dispensasi',
+        subFolder,
+        category,
         uploaderNpm: metadata.uploaderNpm,
         uploaderName: metadata.uploaderName,
         eventTitle: metadata.eventTitle,
@@ -195,7 +266,8 @@ export async function uploadProofToGDrive(
 
   // 3. Fallback: Simpan ke Supabase Storage (bucket attendance-proofs)
   try {
-    const filePath = `surat-izin/${targetFileName}`;
+    const storageFolder = category === 'delegasi' ? 'dokumentasi-delegasi' : 'surat-izin';
+    const filePath = `${storageFolder}/${targetFileName}`;
     const { error: uploadError } = await supabase.storage
       .from('attendance-proofs')
       .upload(filePath, processedFile, {

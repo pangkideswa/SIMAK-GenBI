@@ -155,36 +155,60 @@ export async function syncMemberUpdate(payload: MemberSyncPayload): Promise<{
 
   // 7. Simpan ke Supabase Database secara aman
   let dbError: any = null;
-  const dbData: Record<string, any> = {
+  const baseDbData: Record<string, any> = {
     full_name: payload.fullName.trim(),
     division: payload.division,
     role: payload.role,
   };
+  const dbDataWithJabatan: Record<string, any> = payload.jabatan
+    ? { ...baseDbData, jabatan: payload.jabatan.trim() }
+    : baseDbData;
+
+  const updateTableSafely = async (tableName: string) => {
+    const { data: updatedRows, error } = await (supabase.from(tableName) as any)
+      .update(dbDataWithJabatan)
+      .or(`npm.eq.${cleanId},nim.eq.${cleanId}`)
+      .select('npm');
+
+    if (error && String(error.message || '').toLowerCase().includes('jabatan')) {
+      // Fallback jika kolom jabatan belum dibuat di skema Supabase
+      const { error: retryErr } = await (supabase.from(tableName) as any)
+        .update(baseDbData)
+        .or(`npm.eq.${cleanId},nim.eq.${cleanId}`);
+      if (retryErr) {
+        console.warn(`Catatan Supabase ${tableName}:`, retryErr.message);
+      }
+      return;
+    }
+
+    if (error) {
+      console.warn(`Catatan Supabase ${tableName}:`, error.message);
+      return;
+    }
+
+    // Jika baris belum ada di authorized_members, lakukan upsert agar tersimpan ke cloud
+    if (tableName === 'authorized_members' && (!updatedRows || updatedRows.length === 0)) {
+      const { error: upsertErr } = await (supabase.from('authorized_members') as any).upsert({
+        npm: cleanId,
+        nim: payload.nim || cleanId,
+        ...dbDataWithJabatan,
+        is_claimed: true,
+      });
+      if (upsertErr && String(upsertErr.message || '').toLowerCase().includes('jabatan')) {
+        await (supabase.from('authorized_members') as any).upsert({
+          npm: cleanId,
+          nim: payload.nim || cleanId,
+          ...baseDbData,
+          is_claimed: true,
+        });
+      }
+    }
+  };
 
   try {
-    // A. Update authorized_members (mendukung kolom npm maupun nim)
-    const { error: authErr } = await (supabase.from('authorized_members') as any)
-      .update(dbData)
-      .or(`npm.eq.${cleanId},nim.eq.${cleanId}`);
-    if (authErr) {
-      console.warn('Catatan Supabase authorized_members:', authErr.message);
-    }
-
-    // B. Update profiles jika akun sudah aktivasi
-    const { error: profErr } = await (supabase.from('profiles') as any)
-      .update(dbData)
-      .or(`npm.eq.${cleanId},nim.eq.${cleanId}`);
-    if (profErr) {
-      console.warn('Catatan Supabase profiles:', profErr.message);
-    }
-
-    // C. Update member_evaluations di Supabase agar Leaderboard tersinkronkan
-    const { error: evalErr } = await (supabase.from('member_evaluations') as any)
-      .update(dbData)
-      .or(`npm.eq.${cleanId},nim.eq.${cleanId}`);
-    if (evalErr) {
-      console.warn('Catatan Supabase member_evaluations:', evalErr.message);
-    }
+    await updateTableSafely('authorized_members');
+    await updateTableSafely('profiles');
+    await updateTableSafely('member_evaluations');
   } catch (err: any) {
     dbError = err;
     console.warn('Catatan koneksi database:', err?.message);
